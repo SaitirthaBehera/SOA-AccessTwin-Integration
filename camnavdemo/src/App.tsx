@@ -187,6 +187,18 @@ export default function App() {
     }
   };
 
+  const handleFeatureAddedToTwin = (newFeature: AccessibilityFeature) => {
+    setFeatures(prev => {
+      const idx = prev.findIndex(f => f.id === newFeature.id);
+      if (idx !== -1) {
+        const updated = [...prev];
+        updated[idx] = newFeature;
+        return updated;
+      }
+      return [newFeature, ...prev];
+    });
+  };
+
   const handleAddDetectedFeatureToTwin = (label: string, type: any, confidence: number) => {
     const newFeature: AccessibilityFeature = {
       id: `feat-ai-${Date.now()}`,
@@ -261,6 +273,9 @@ export default function App() {
 
         {activeTab === 'ai-detection' && (
           <AiDetection
+            isAdmin={isAdminLoggedIn}
+            buildings={buildings}
+            onFeatureAddedToTwin={handleFeatureAddedToTwin}
             onAddDetectedFeatureToTwin={handleAddDetectedFeatureToTwin}
           />
         )}

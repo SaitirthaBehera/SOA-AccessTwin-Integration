@@ -190,10 +190,16 @@ export interface DetectedObjectItem {
 export interface VisionDetectionResponse {
   status: string;
   message: string;
-  is_mock: boolean;
+  is_mock?: boolean;
   results: DetectedObjectItem[];
-  verification_status: string;
+  verification_status?: string;
   voice_message: string;
+  summary?: string;
+  accessibility_score?: number;
+  overallAccessibility?: 'High' | 'Moderate' | 'Poor';
+  imageId?: string;
+  imageUrl?: string;
+  analyzedAt?: string;
 }
 
 export interface ReportAnalysisResponse {
@@ -394,49 +400,33 @@ export const navigationApi = {
    * POST /api/detect (multipart/form-data with file)
    */
   async detectAccessibility(imageInput: File | Blob | string): Promise<VisionDetectionResponse> {
-    const baseUrl = getNavigationApiUrl();
-    const formData = new FormData();
+    let base64Str = '';
 
     if (typeof imageInput === 'string') {
-      if (imageInput.startsWith('data:image')) {
-        const blob = dataURItoBlob(imageInput);
-        formData.append('file', blob, 'capture.jpg');
-      } else {
-        throw new Error('Invalid image data string provided');
-      }
-    } else if (imageInput instanceof File) {
-      formData.append('file', imageInput, imageInput.name);
-    } else if (imageInput instanceof Blob) {
-      formData.append('file', imageInput, 'upload.jpg');
-    }
-
-    try {
-      const res = await fetch(`${baseUrl}/api/detect`, {
-        method: 'POST',
-        body: formData
+      base64Str = imageInput;
+    } else if (imageInput instanceof File || imageInput instanceof Blob) {
+      base64Str = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(imageInput);
       });
-
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch {
-      // If failed, fall back to current origin
+    } else {
+      throw new Error('Invalid image input type provided');
     }
 
-    if (typeof window !== 'undefined' && baseUrl !== window.location.origin) {
-      const res = await fetch('/api/detect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image: typeof imageInput === 'string' ? imageInput : undefined
-        })
-      });
-      if (res.ok) {
-        return await res.json();
-      }
+    const res = await fetch('/api/detect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64Str })
+    });
+
+    if (res.ok) {
+      return await res.json();
     }
 
-    throw new Error('AI detection service is currently unavailable.');
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.message || `AI detection failed with status ${res.status}`);
   },
 
   /**

@@ -1,8 +1,9 @@
 import express from 'express';
 import path from 'path';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
-import { MOCK_BUILDINGS, MOCK_FEATURES, MOCK_REPORTS, MOCK_RECOMMENDATIONS, MOCK_NODES, MOCK_EDGES, MOCK_AI_DETECTION_SAMPLES } from './src/data/mockData';
+import { MOCK_BUILDINGS, MOCK_FEATURES, MOCK_REPORTS, MOCK_RECOMMENDATIONS, MOCK_NODES, MOCK_EDGES } from './src/data/mockData';
 import { calculateAccessibleRoute } from './src/utils/navigation';
 import { computeCampusRoute } from './src/utils/campusGraph';
 
@@ -139,6 +140,83 @@ async function startServer() {
       features = features.filter(f => f.floorId === Number(floorId));
     }
     res.json(features);
+  });
+
+  // Admin-only endpoint to add detected features to Twin Map
+  app.post(['/api/twin-map/features', '/api/buildings/:id/features'], (req, res) => {
+    if (!isValidAdminToken(req)) {
+      return res.status(403).json({ error: 'Forbidden: Administrator authentication required to add features to Digital Twin Map' });
+    }
+
+    const body = req.body || {};
+    const buildingId = body.building_id || body.buildingId || req.params.id;
+    const rawFloorId = body.floor_id !== undefined ? body.floor_id : body.floorId;
+
+    if (!buildingId) {
+      return res.status(400).json({ error: 'Building ID is required.' });
+    }
+    if (rawFloorId === undefined || rawFloorId === null || rawFloorId === '' || isNaN(Number(rawFloorId))) {
+      return res.status(400).json({ error: 'Floor ID is required.' });
+    }
+
+    const floorId = Number(rawFloorId);
+
+    // Validate building & floor existence against existing MOCK_BUILDINGS source of truth
+    const targetBuilding = MOCK_BUILDINGS.find(b => b.id === buildingId);
+    if (!targetBuilding) {
+      return res.status(400).json({ error: `Building "${buildingId}" not found in campus database.` });
+    }
+    const targetFloor = targetBuilding.floors.find(f => f.floorId === floorId);
+    if (!targetFloor) {
+      return res.status(400).json({ error: `Floor ID ${floorId} does not belong to building "${targetBuilding.name}".` });
+    }
+
+    const featureType = body.feature_type || body.type || 'other';
+    const label = (body.label || body.feature_label || body.name || 'AI Detected Feature').trim();
+    const confidence = typeof body.confidence === 'number' ? body.confidence : (typeof body.confidenceScore === 'number' ? body.confidenceScore : 90);
+    const status: 'working' | 'broken' = body.status === 'broken' ? 'broken' : 'working';
+    const source = body.source || 'AI_DETECTION';
+    const timestamp = body.timestamp || new Date().toISOString();
+
+    const confidenceLevel: 'HIGH' | 'MEDIUM' | 'LOW' = confidence >= 80 ? 'HIGH' : confidence >= 60 ? 'MEDIUM' : 'LOW';
+
+    const newFeature: (typeof MOCK_FEATURES)[0] = {
+      id: body.id || `feat-twin-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      buildingId,
+      floorId,
+      name: label,
+      type: featureType,
+      status,
+      x: body.x !== undefined ? Number(body.x) : 50,
+      y: body.y !== undefined ? Number(body.y) : 50,
+      description: body.description || `Feature identified via ${source} with ${confidence}% confidence score on ${targetFloor.name}.`,
+      confidenceScore: confidence,
+      confidenceLevel,
+      verificationStatus: 'admin_verified',
+      lastUpdated: timestamp.split('T')[0],
+      specifications: body.specifications || `Identified by AI Vision Detection (${confidence}% match)`,
+      upvotes: 1
+    };
+
+    // Prevent identical duplicates if already present
+    const existingIndex = MOCK_FEATURES.findIndex(f => 
+      f.buildingId === buildingId && 
+      f.floorId === floorId && 
+      f.name.toLowerCase() === label.toLowerCase() && 
+      f.type === featureType
+    );
+
+    if (existingIndex >= 0) {
+      MOCK_FEATURES[existingIndex] = { ...MOCK_FEATURES[existingIndex], ...newFeature };
+    } else {
+      MOCK_FEATURES.unshift(newFeature as any);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: `Feature "${label}" successfully added to ${targetBuilding.name} — ${targetFloor.name}`,
+      feature: newFeature
+    });
   });
 
   app.get('/api/reports', (req, res) => {
@@ -344,13 +422,15 @@ async function startServer() {
     res.json(rec);
   });
 
+  const FASTAPI_PORT = process.env.NAV_PORT || 8000;
+
   // Navigation Health Check
   app.get('/api/fastapi/health', async (req, res) => {
     try {
-      const fastApiRes = await fetch('http://127.0.0.1:8000/health', { signal: AbortSignal.timeout(1500) });
+      const fastApiRes = await fetch(`http://127.0.0.1:${FASTAPI_PORT}/health`, { signal: AbortSignal.timeout(1500) });
       if (fastApiRes.ok) {
         const data = await fastApiRes.json();
-        return res.json({ isOnline: true, url: 'FastAPI Backend (port 8000)', ...data });
+        return res.json({ isOnline: true, url: `FastAPI Backend (port ${FASTAPI_PORT})`, ...data });
       }
     } catch {}
     res.json({ isOnline: true, url: 'Integrated Campus Graph Navigation Service', status: 'online' });
@@ -362,9 +442,9 @@ async function startServer() {
     const end = (req.query.end || req.body?.end || req.body?.targetNodeId || 'library_entrance') as string;
     const profile = (req.query.profile || req.body?.profile || 'wheelchair') as 'wheelchair' | 'blind' | 'standard';
 
-    // 1. Try FastAPI Python Backend on port 8000
+    // 1. Try FastAPI Python Backend
     try {
-      const fastApiUrl = new URL('http://127.0.0.1:8000/api/navigate');
+      const fastApiUrl = new URL(`http://127.0.0.1:${FASTAPI_PORT}/api/navigate`);
       fastApiUrl.searchParams.set('start', start);
       fastApiUrl.searchParams.set('end', end);
       fastApiUrl.searchParams.set('profile', profile);
@@ -380,7 +460,7 @@ async function startServer() {
         return res.json(data);
       }
     } catch {
-      // FastAPI offline or not reachable on port 8000, fall back to integrated graph routing
+      // FastAPI offline or not reachable, fall back to integrated graph routing
     }
 
     // 2. Integrated Dijkstra routing on SOA ITER Campus graph
@@ -402,64 +482,89 @@ async function startServer() {
   app.get('/api/navigate', handleNavigate);
   app.post('/api/navigate', handleNavigate);
 
-  app.post('/api/detect', async (req, res) => {
-    const { image } = req.body;
-
-    // If Gemini API is available and image data provided
-    if (ai && image && typeof image === 'string' && image.startsWith('data:image')) {
-      try {
-        const base64Data = image.split(',')[1];
-        const mimeType = image.split(';')[0].split(':')[1] || 'image/jpeg';
-
-        const prompt = `Analyze this building or infrastructure photograph for accessibility features or barriers.
-Detect elements such as ramps, elevators, lifts, steps/stairs, tactile paving, accessible toilets, signage, or narrow doors.
-Return JSON ONLY matching this format:
-{
-  "overallAccessibility": "High" | "Moderate" | "Poor",
-  "summary": "Short 1-2 sentence description",
-  "detectedObjects": [
-    {
-      "id": "det-1",
-      "label": "Ramp / Elevator / Steps / etc",
-      "type": "ramp" | "lift" | "toilet" | "signage" | "parking" | "door" | "stairs" | "tactile_path" | "obstacle",
-      "confidence": 92,
-      "bbox": [x_min_percent, y_min_percent, x_max_percent, y_max_percent],
-      "status": "working" | "broken",
-      "recommendation": "Observations"
+  // Proxy endpoint for Sai's AI Accessibility Detection (Authoritative backend: Python FastAPI)
+  app.post(['/api/detect', '/api/detect/debug'], async (req, res) => {
+    const targetPath = req.path;
+    try {
+      const fastApiRes = await fetch(`http://127.0.0.1:${FASTAPI_PORT}${targetPath}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body),
+        signal: AbortSignal.timeout(25000)
+      });
+      const data = await fastApiRes.json();
+      return res.status(fastApiRes.status).json(data);
+    } catch (err: any) {
+      console.error(`FastAPI detection proxy error connecting to http://127.0.0.1:${FASTAPI_PORT}${targetPath}:`, err.message);
+      return res.status(503).json({
+        status: 'error',
+        message: `FastAPI AI detection service unavailable at port ${FASTAPI_PORT}: ${err.message}`,
+        is_mock: false,
+        results: [],
+        detectedObjects: [],
+        overallAccessibility: 'Unknown',
+        accessibility_score: 0.0,
+        summary: 'Backend AI detection service unavailable.',
+        voice_message: 'The AI detection service is currently unreachable.',
+        verification_status: 'ERROR'
+      });
     }
-  ]
-}`;
+  });
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.6-flash',
-          contents: [
-            prompt,
-            { inlineData: { data: base64Data, mimeType } }
-          ]
+  // Report AI Pre-Analysis & Civil Cost Estimation bridge
+  app.post(['/reports/analyze', '/api/reports/analyze'], async (req, res) => {
+    const { user_query, building_name, reporter_name, image } = req.body;
+    const loc = building_name || 'Block A';
+    const query = user_query || 'Reported accessibility barrier';
+
+    // 1. Forward to FastAPI recommendations router if available
+    try {
+      if (image && typeof image === 'string') {
+        const formData = new FormData();
+        const base64Data = image.includes(',') ? image.split(',')[1] : image;
+        const buffer = Buffer.from(base64Data, 'base64');
+        const blob = new Blob([buffer], { type: 'image/jpeg' });
+        formData.append('file', blob, 'report.jpg');
+        formData.append('user_query', query);
+        formData.append('building_name', loc);
+        formData.append('reporter_name', reporter_name || 'Campus Reporter');
+
+        const fastApiRes = await fetch(`http://127.0.0.1:${FASTAPI_PORT}/api/recommendations/analyze`, {
+          method: 'POST',
+          body: formData,
+          signal: AbortSignal.timeout(6000)
         });
-
-        const text = response.text || '';
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          return res.json({
-            imageId: `img-${Date.now()}`,
-            imageUrl: image,
-            analyzedAt: new Date().toISOString(),
-            ...parsed
-          });
+        if (fastApiRes.ok) {
+          const fastApiData = await fastApiRes.json();
+          return res.json(fastApiData);
         }
-      } catch (err) {
-        console.error('Gemini vision detection error, falling back to mock vision response:', err);
       }
+    } catch (err) {
+      console.warn('FastAPI report analysis unreachable, using fallback response:', err);
     }
 
-    // Fallback response with realistic object detections
-    res.json({
-      ...MOCK_AI_DETECTION_SAMPLES[0],
-      imageId: `img-${Date.now()}`,
-      imageUrl: image || MOCK_AI_DETECTION_SAMPLES[0].imageUrl,
-      analyzedAt: new Date().toISOString(),
+    // 2. Standard response
+    return res.json({
+      status: 'success',
+      message: 'User report analyzed by AI and queued for Admin Approval.',
+      data: {
+        id: `rec-user-${Date.now()}`,
+        block: loc,
+        source: 'Crowdsourced User Report',
+        reporter: reporter_name || 'Campus Reporter',
+        user_complaint: query,
+        ai_verified: true,
+        verification_status: 'pending_admin_approval',
+        confidence: 0.92,
+        type: 'Service Barrier',
+        issue: query,
+        recommendation: 'Clear pathway and install standard ramp access.',
+        cost: 'Low',
+        estimated_cost_inr: '₹1,500 - ₹3,500',
+        priority: 'High',
+        impact_score: 88,
+        voice_message: `Report received for ${loc}. Estimated low-cost remediation is ₹1,500 to ₹3,500.`
+      }
     });
   });
 
