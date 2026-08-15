@@ -385,6 +385,13 @@ async function startServer() {
     report.confidenceScore = 100;
     report.confidenceLevel = 'HIGH';
 
+    // Auto-mark any linked recommendation in MOCK_RECOMMENDATIONS as Completed
+    MOCK_RECOMMENDATIONS.forEach(r => {
+      if ((r as any).sourceReportId === id || r.id.includes(id)) {
+        r.status = 'Completed';
+      }
+    });
+
     res.json(report);
   });
 
@@ -400,6 +407,56 @@ async function startServer() {
       recs = recs.filter(r => r.buildingId === buildingId);
     }
     res.json(recs);
+  });
+
+  // Save new AI-generated recommendation (called after admin verifies a report)
+  app.post('/api/recommendations', (req, res) => {
+    const body = req.body || {};
+    const newRec = {
+      id: body.id || `rec-ai-${Date.now()}`,
+      buildingId: body.buildingId || 'bldg-iter-main',
+      buildingName: body.buildingName || 'ITER Academic Block',
+      title: body.title || 'AI Generated Fix Suggestion',
+      problem: body.problem || 'Reported accessibility barrier',
+      solution: body.solution || 'Install accessible infrastructure.',
+      severity: body.severity || 'High',
+      disabilityTypesAffected: body.disabilityTypesAffected || ['wheelchair'],
+      estimatedUsersAffected: body.estimatedUsersAffected || 150,
+      costCategory: body.costCategory || 'Medium',
+      estimatedCostAmount: body.estimatedCostAmount || '₹2,000 - ₹5,000',
+      expectedImpact: body.expectedImpact || 'High',
+      priority: body.priority || 'High',
+      impactScore: body.impactScore || 85,
+      status: body.status || 'Pending',
+      floorId: body.floorId ?? 0,
+      locationName: body.locationName || 'Ground Floor',
+      sourceReportId: body.sourceReportId
+    };
+
+    // Prevent duplicates
+    const existingIdx = MOCK_RECOMMENDATIONS.findIndex(r => r.id === newRec.id);
+    if (existingIdx >= 0) {
+      MOCK_RECOMMENDATIONS[existingIdx] = newRec as any;
+    } else {
+      MOCK_RECOMMENDATIONS.unshift(newRec as any);
+    }
+
+    console.log('[Server] New AI recommendation saved:', newRec.id, newRec.title);
+    res.status(201).json(newRec);
+  });
+
+  // Auto-mark recommendation as Completed when linked report is resolved
+  app.patch('/api/recommendations/by-report/:reportId/resolve', (req, res) => {
+    const { reportId } = req.params;
+    let found = false;
+    MOCK_RECOMMENDATIONS.forEach(r => {
+      if ((r as any).sourceReportId === reportId || r.id.includes(reportId)) {
+        r.status = 'Completed';
+        found = true;
+      }
+    });
+    console.log(`[Server] Recommendation for report ${reportId} marked Completed:`, found);
+    return res.json({ success: true, message: `Recommendation resolved for report ${reportId}` });
   });
 
   app.patch('/api/recommendations/:id/status', (req, res) => {

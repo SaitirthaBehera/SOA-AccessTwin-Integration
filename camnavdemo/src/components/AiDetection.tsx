@@ -124,7 +124,8 @@ export const AiDetection: React.FC<AiDetectionProps> = ({
 
         if (res && res.status === 'success') {
           setIsFastApiVerified(true);
-          setFastApiVoiceMessage(res.voice_message || null);
+          const voiceMsg = res.voice_message || (res as any).summary || null;
+          setFastApiVoiceMessage(voiceMsg);
 
           // Map real detections from the backend response
           const rawItems = res.results || (res as any).detectedObjects || [];
@@ -199,6 +200,10 @@ export const AiDetection: React.FC<AiDetectionProps> = ({
     setFastApiVoiceMessage(null);
     setIsFastApiVerified(false);
     setAddedFeatureIds(new Set());
+    if (isSpeaking && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
   };
 
   // Open Add to Twin Map modal for specific detected feature
@@ -276,6 +281,7 @@ export const AiDetection: React.FC<AiDetectionProps> = ({
   };
 
   const activeImage = uploadedImage || detectionResult.imageUrl || selectedSample?.imageUrl || MOCK_AI_DETECTION_SAMPLES[0].imageUrl;
+  const currentVoiceText = fastApiVoiceMessage || detectionResult.summary;
 
   return (
     <div id="section-ai-detection" className="space-y-8">
@@ -331,42 +337,6 @@ export const AiDetection: React.FC<AiDetectionProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Voice Message Notification (if returned by FastAPI) */}
-      {fastApiVoiceMessage && (
-        <div className="bg-purple-50 border border-purple-200 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center space-x-2 text-xs font-bold text-purple-900">
-              <Radio className="w-4 h-4 text-purple-700" />
-              <span>FastAPI Vision Audio Feedback</span>
-            </div>
-            <p className="text-xs text-purple-950 font-medium italic">
-              &quot;{fastApiVoiceMessage}&quot;
-            </p>
-          </div>
-
-          <button
-            id="btn-speak-ai-detection"
-            type="button"
-            onClick={() => handleSpeakVoice(fastApiVoiceMessage)}
-            className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center space-x-2 cursor-pointer transition-all shrink-0 ${
-              isSpeaking ? 'bg-rose-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white shadow-sm'
-            }`}
-          >
-            {isSpeaking ? (
-              <>
-                <VolumeX className="w-4 h-4" />
-                <span>Stop Audio</span>
-              </>
-            ) : (
-              <>
-                <Volume2 className="w-4 h-4" />
-                <span>Listen Audio</span>
-              </>
-            )}
-          </button>
-        </div>
-      )}
 
       {/* Main Studio: Bounding Box Canvas + Control Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -478,6 +448,44 @@ export const AiDetection: React.FC<AiDetectionProps> = ({
               ))}
             </div>
           </div>
+
+          {/* AI Spatial Voice Assistant Banner (Route Page Style) */}
+          {currentVoiceText && (
+            <div className="bg-purple-50/90 border border-purple-200 p-5 rounded-3xl shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-xs font-bold text-purple-900 uppercase tracking-wider">
+                  <Volume2 className="w-4 h-4 text-purple-700" />
+                  <span>AI Spatial Voice Guidance</span>
+                </div>
+                <button
+                  id="btn-speak-ai-vision"
+                  type="button"
+                  onClick={() => handleSpeakVoice(currentVoiceText)}
+                  className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-1.5 cursor-pointer transition-all shadow-xs ${
+                    isSpeaking
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white animate-pulse'
+                      : 'bg-purple-600 hover:bg-purple-700 text-white'
+                  }`}
+                >
+                  {isSpeaking ? (
+                    <>
+                      <VolumeX className="w-3.5 h-3.5" />
+                      <span>Stop Voice</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="w-3.5 h-3.5" />
+                      <span>Listen Voice</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <p className="text-xs text-purple-950 font-medium italic leading-relaxed bg-white/80 p-3 rounded-2xl border border-purple-100">
+                &quot;{currentVoiceText}&quot;
+              </p>
+            </div>
+          )}
 
           {/* Detected Features Breakdown List */}
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-4">

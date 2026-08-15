@@ -64,9 +64,33 @@ def _get_campus_baseline_interventions() -> List[Dict[str, Any]]:
 def get_recommendations():
     """Returns dynamic recommendations from live user reports + campus baseline audits."""
     baseline = _get_campus_baseline_interventions()
-    # Live reports at top, followed by baseline
     combined = list(LIVE_RECOMMENDATIONS) + baseline
     return combined
+
+@router.post("/recommendations")
+def add_recommendation(rec: Dict[str, Any]):
+    """Receives and stores newly created AI recommendations."""
+    LIVE_RECOMMENDATIONS.insert(0, rec)
+    return {"status": "success", "recommendation": rec}
+
+@router.patch("/recommendations/by-report/{report_id}/resolve")
+def resolve_recommendation_by_report(report_id: str):
+    """Marks recommendation as Completed when linked admin report is resolved."""
+    found = False
+    for r in LIVE_RECOMMENDATIONS:
+        if r.get("sourceReportId") == report_id or report_id in str(r.get("id", "")):
+            r["status"] = "Completed"
+            found = True
+    return {"status": "success", "resolved": found, "report_id": report_id}
+
+@router.patch("/recommendations/{rec_id}/status")
+def update_recommendation_status(rec_id: str, payload: Dict[str, Any]):
+    status = payload.get("status", "Pending")
+    for r in LIVE_RECOMMENDATIONS:
+        if r.get("id") == rec_id:
+            r["status"] = status
+            return {"status": "success", "recommendation": r}
+    return {"status": "not_found"}
 
 @router.post("/reports/analyze")
 async def analyze_and_queue_report(
@@ -76,31 +100,35 @@ async def analyze_and_queue_report(
     reporter_name: str = Form("Campus Reporter")
 ):
     """Analyzes user complaint + photo using Gemini AI and queues a live Fix Suggestion."""
-    temp_path = os.path.join(TEMP_DIR, f"rep_{uuid.uuid4().hex}.jpg")
+    temp_path = None
     
     try:
-        if file:
+        has_file = False
+        if file and file.filename:
             content = await file.read()
-            with open(temp_path, "wb") as f:
-                f.write(content)
-        else:
-            with open(temp_path, "wb") as f:
-                f.write(b"")
+            if len(content) > 100:  # Valid image payload
+                temp_path = os.path.join(TEMP_DIR, f"rep_{uuid.uuid4().hex}.jpg")
+                with open(temp_path, "wb") as f:
+                    f.write(content)
+                has_file = True
 
         ai_eval = detector.analyze_user_report(
-            image_path=temp_path,
-            user_description=user_query,
+            image_path=temp_path if has_file else "",
+            user_description=user_query if user_query.strip() else "Accessibility barrier reported",
             location=building_name
         )
 
         rec_id = f"rec-{uuid.uuid4().hex[:8]}"
+        problem_text = ai_eval.get("detected_problem") or user_query.strip() or "Pathway obstruction reported"
+        solution_text = ai_eval.get("recommended_fix") or "Clear pathway and inspect surface gradient as per CPWD norms"
+
         new_card = {
             "id": rec_id,
             "buildingId": "bldg-iter-main",
             "buildingName": building_name,
-            "title": f"Fix: {ai_eval.get('detected_problem', user_query)[:55]}",
-            "problem": ai_eval.get("detected_problem", user_query),
-            "solution": ai_eval.get("recommended_fix", "Clear obstruction and repair barrier"),
+            "title": f"Fix: {problem_text[:50]}",
+            "problem": problem_text,
+            "solution": solution_text,
             "severity": ai_eval.get("priority", "High"),
             "priority": ai_eval.get("priority", "High"),
             "disabilityTypesAffected": ["wheelchair", "visual"],
@@ -127,8 +155,8 @@ async def analyze_and_queue_report(
                 "verification_status": "AI_VERIFIED" if ai_eval.get("is_verified", True) else "FLAGGED",
                 "confidence": int(float(ai_eval.get("confidence", 0.90)) * 100),
                 "type": ai_eval.get("issue_type", "Service Barrier"),
-                "issue": ai_eval.get("detected_problem", user_query),
-                "recommendation": ai_eval.get("recommended_fix", "Repair needed"),
+                "issue": problem_text,
+                "recommendation": solution_text,
                 "estimated_cost_inr": ai_eval.get("estimated_cost_inr", "₹1,500 - ₹3,000"),
                 "priority": ai_eval.get("priority", "High"),
                 "impact_score": ai_eval.get("impact_score", 85),
@@ -139,7 +167,7 @@ async def analyze_and_queue_report(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        if os.path.exists(temp_path):
+        if temp_path and os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
             except Exception:
