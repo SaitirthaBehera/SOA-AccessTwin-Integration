@@ -266,7 +266,7 @@ GET /api/navigate?start=iter_cafeteria&end=c_f1_r13&profile=wheelchair
 | Name | Role |
 | :--- | :--- |
 | **Saitirtha Behera** | AI/ML Integration, Backend Architecture, Navigation Engine |
-| **Sujit Kumar Nayak** | Frontend Development, Supabase, UI/UX |
+| **Sujit Kumar Nayak** | Frontend Development, Database,Authentication,Memory,Security, UI/UX |
 
 ---
 
