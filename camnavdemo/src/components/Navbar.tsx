@@ -5,21 +5,17 @@ import {
   AlertTriangle, 
   Scan, 
   Navigation, 
-  ShieldAlert, 
   ShieldCheck,
   Lock,
-  Unlock,
-  Lightbulb, 
   BarChart3, 
-  HelpCircle,
-  Search
+  HelpCircle
 } from 'lucide-react';
 import { Building } from '../types';
 
 interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  selectedBuilding: Building;
+  selectedBuilding: Building | null;
   buildings: Building[];
   onSelectBuilding: (b: Building) => void;
   onOpenHowItWorks: () => void;
@@ -37,23 +33,16 @@ export const Navbar: React.FC<NavbarProps> = ({
   isAdminLoggedIn = false,
   onLogoutAdmin
 }) => {
-  // Public tabs visible to all visitors without requiring authentication
-  const publicNavItems = [
+  // Navigation tabs visible in the main navbar
+  const navItems = [
     { id: 'dashboard', label: 'Home', icon: Building2 },
     { id: 'digital-twin', label: 'Digital Twin Map', icon: Map },
     { id: 'report-issue', label: 'Report Issue', icon: AlertTriangle },
     { id: 'ai-detection', label: 'AI Detection', icon: Scan },
     { id: 'navigation', label: 'Accessible Route', icon: Navigation },
     { id: 'score', label: 'Building Score', icon: BarChart3 },
-  ];
-
-  // Admin-only tabs visible when authenticated
-  const adminNavItems = isAdminLoggedIn ? [
     { id: 'admin', label: 'Admin Dashboard', icon: ShieldCheck },
-    { id: 'recommendations', label: 'Fix Suggestions', icon: Lightbulb },
-  ] : [];
-
-  const allVisibleItems = [...publicNavItems, ...adminNavItems];
+  ];
 
   return (
     <header id="main-navbar" className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
@@ -114,7 +103,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Building2 className="w-4 h-4 text-slate-500 mr-2 shrink-0" />
                 <select
                   id="select-building-nav"
-                  value={selectedBuilding.id}
+                  value={selectedBuilding?.id || ''}
                   onChange={(e) => {
                     const found = buildings.find(b => b.id === e.target.value);
                     if (found) onSelectBuilding(found);
@@ -157,7 +146,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Navigation Tabs Bar */}
         <nav id="nav-tab-list" className="flex items-center space-x-1 overflow-x-auto no-scrollbar border-t border-slate-100 py-2 text-xs font-medium">
-          {allVisibleItems.map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (

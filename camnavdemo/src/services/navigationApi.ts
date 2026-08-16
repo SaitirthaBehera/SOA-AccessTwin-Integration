@@ -158,19 +158,93 @@ export const CAMPUS_LOCATIONS: CampusLocationDef[] = [
     description: 'Central campus pedestrian nexus with 360-degree tactile paving and audio beacons.',
     coordinates: { x: 50, y: 50 },
     features: ['360° Tactile Paving', 'Directional Audio Beacons', 'Solar Pathway Lighting']
+  },
+  // Multi-Floor Rooms & Facilities (Blocks C, D, E)
+  {
+    id: 'c_f2_r05',
+    name: 'Block C — Floor 2 (Room C-205)',
+    shortName: 'Room C-205',
+    category: 'academic',
+    description: 'Mechanical lab on 2nd floor with direct lift access and wide corridor entrance.',
+    coordinates: { x: 58, y: 55 },
+    features: ['Accessible Elevator/Ramp', 'Braille Room Sign', 'Wide Entrance']
+  },
+  {
+    id: 'c_f1_boy_toilet',
+    name: "Block C — Floor 1 (C-110 Boy's Restroom)",
+    shortName: 'C-110 Restroom',
+    category: 'facility',
+    description: 'Accessible restroom equipped with stainless steel grab bars and level threshold.',
+    coordinates: { x: 58, y: 55 },
+    features: ['SS Grab Bars', 'Wide Doorway', 'Emergency Pull Cord']
+  },
+  {
+    id: 'd_f1_r10',
+    name: 'Block D — Floor 1 (Room D-110)',
+    shortName: 'Room D-110',
+    category: 'academic',
+    description: 'Biotechnology lecture hall on 1st floor connected directly to Block E bridge.',
+    coordinates: { x: 74, y: 55 },
+    features: ['Direct Bridge to Block E', 'Passenger Elevator', 'Low Noise Acoustic Wall']
+  },
+  {
+    id: 'e_f5_r03',
+    name: 'Block E — Floor 5 (Room E-503)',
+    shortName: 'Room E-503',
+    category: 'academic',
+    description: 'Humanities & Management conference room on top floor reachable via Lift 1-4.',
+    coordinates: { x: 88, y: 55 },
+    features: ['High-Speed Voice Elevator', 'Anti-Slip Flooring', 'Tactile Floor Path']
+  },
+  {
+    id: 'e_f1_girl_toilet',
+    name: "Block E — Floor 1 (Girl's Restroom)",
+    shortName: "E-F1 Girl's Restroom",
+    category: 'facility',
+    description: 'Female accessible restroom with grab bars, anti-skid tiles, and Braille sign.',
+    coordinates: { x: 88, y: 55 },
+    features: ['Braille Door Plate', 'Anti-Skid Tiles', 'Grab Rails']
   }
 ];
+
+export interface NavigationStepItem {
+  stepNumber: number;
+  instruction: string;
+  floorId: number;
+  floorName: string;
+  buildingId: string;
+  floorPlanUrl?: string;
+  distanceMeters: number;
+  nodeId: string;
+  nodeLabel: string;
+  featureTypeUsed: 'elevator' | 'stairs' | 'bridge' | 'ramp' | 'corridor' | 'pathway' | string;
+}
+
+export interface InvolvedFloorItem {
+  key: string;
+  buildingId: string;
+  floor: number;
+  floorName: string;
+  floorPlanUrl?: string;
+}
 
 export interface NavigationRouteResponse {
   status: 'success' | 'error';
   start_location: string;
   end_location: string;
+  start_label?: string;
+  end_label?: string;
   profile_used: string;
   total_distance_meters: number;
   estimated_time_minutes: number;
   path_nodes: string[];
   step_by_step_directions: string[];
-  voice_navigation: string;
+  steps?: NavigationStepItem[];
+  involved_floors?: InvolvedFloorItem[];
+  accessible_features?: string[];
+  voice_guidance?: string;
+  campus_map_url?: string;
+  voice_navigation?: string;
   error?: string;
 }
 
@@ -192,6 +266,7 @@ export interface VisionDetectionResponse {
   message: string;
   is_mock?: boolean;
   results: DetectedObjectItem[];
+  detectedObjects?: DetectedObjectItem[];
   verification_status?: string;
   voice_message: string;
   summary?: string;
@@ -265,14 +340,12 @@ export function getNavigationApiUrl(): string {
     return envApiUrl.trim().replace(/\/+$/, '');
   }
 
-  // If in browser on HTTPS (like AI Studio preview), default to current origin
+  // Default to current origin in browser (which seamlessly proxies to the port 8001 backend)
   if (typeof window !== 'undefined' && window.location) {
-    if (window.location.protocol === 'https:') {
-      return window.location.origin;
-    }
+    return window.location.origin;
   }
 
-  return 'http://localhost:8000';
+  return 'http://localhost:8001';
 }
 
 /**
@@ -397,7 +470,7 @@ export const navigationApi = {
 
   /**
    * AI Accessibility Barrier & Feature Detection
-   * POST /api/detect (multipart/form-data with file)
+   * POST /api/detect (multipart/form-data with file or JSON)
    */
   async detectAccessibility(imageInput: File | Blob | string): Promise<VisionDetectionResponse> {
     let base64Str = '';
@@ -417,16 +490,42 @@ export const navigationApi = {
 
     const res = await fetch('/api/detect', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify({ image: base64Str })
     });
 
-    if (res.ok) {
-      return await res.json();
+    const rawText = await res.text();
+    let parsedData: any = null;
+    try {
+      parsedData = JSON.parse(rawText);
+    } catch {
+      throw new Error('AI detection service returned an invalid response. Please try again.');
     }
 
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.message || `AI detection failed with status ${res.status}`);
+    if (!res.ok || (parsedData && parsedData.status === 'error')) {
+      throw new Error(parsedData?.message || parsedData?.error || `AI detection failed with status ${res.status}`);
+    }
+
+    if (parsedData && (parsedData.status === 'success' || parsedData.results || parsedData.detectedObjects)) {
+      const rawResults = parsedData.results || parsedData.detectedObjects || [];
+      return {
+        status: 'success',
+        message: parsedData.message || (rawResults.length > 0 ? `AI identified ${rawResults.length} accessibility features.` : 'No accessibility features or physical barriers detected in this image.'),
+        is_mock: false,
+        results: rawResults,
+        detectedObjects: rawResults,
+        overallAccessibility: parsedData.overallAccessibility || (rawResults.some((o: any) => o.status === 'broken') ? 'Moderate' : 'High'),
+        accessibility_score: typeof parsedData.accessibility_score === 'number' ? parsedData.accessibility_score : 8.0,
+        summary: parsedData.summary || parsedData.message || (rawResults.length > 0 ? `AI identified ${rawResults.length} accessibility features.` : 'No accessibility features or physical barriers detected in this image.'),
+        voice_message: parsedData.voice_message || (rawResults.length > 0 ? 'Accessibility scan complete.' : 'No accessibility features detected in this image.'),
+        verification_status: parsedData.verification_status || 'AI_VERIFIED',
+        imageId: parsedData.imageId || `img-${Date.now()}`,
+        imageUrl: base64Str.length < 200 ? base64Str : undefined,
+        analyzedAt: parsedData.analyzedAt || new Date().toISOString()
+      };
+    }
+
+    throw new Error('No detection result returned from AI model.');
   },
 
   /**

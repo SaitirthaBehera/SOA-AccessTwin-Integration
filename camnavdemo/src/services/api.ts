@@ -1,11 +1,11 @@
-import { Building, AccessibilityFeature, AccessibilityReport, Recommendation, DisabilityProfile, RouteResult, AiDetectionResult, VerificationStatus, ConfidenceLevel } from '../types';
-import { MOCK_BUILDINGS, MOCK_FEATURES, MOCK_RECOMMENDATIONS, MOCK_NODES, MOCK_EDGES, MOCK_AI_DETECTION_SAMPLES } from '../data/mockData';
+import { Building, AccessibilityFeature, AccessibilityReport, Recommendation, DisabilityProfile, RouteResult, AiDetectionResult, VerificationStatus, ConfidenceLevel, BuildingFloor, BuildingRoom } from '../types';
 import { calculateAccessibleRoute } from '../utils/navigation';
 import { supabase, isSupabaseConfigured, signInAdminWithSupabase } from '../lib/supabase';
+import { MOCK_BUILDINGS, MOCK_REPORTS, MOCK_NODES, MOCK_EDGES, MOCK_RECOMMENDATIONS } from '../data/mockData';
 
 // In-memory state only for static building features & recommendations
-let localFeatures = [...MOCK_FEATURES];
-let localRecommendations = [...MOCK_RECOMMENDATIONS];
+let localFeatures: AccessibilityFeature[] = [];
+let localRecommendations: Recommendation[] = [];
 
 // Safe UUID Generator compatible with all browser & Node runtimes
 function generateUUID(): string {
@@ -17,6 +17,25 @@ function generateUUID(): string {
     const v = c === 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
+}
+
+// UUID validation helper to prevent PostgreSQL syntax errors
+function isUUID(str?: string): boolean {
+  return typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
+}
+
+// Known demo or default placeholder image patterns to strictly exclude from user uploads
+export const KNOWN_DEMO_IMAGES = [
+  'photo-1584467735871-8e85353a8413',
+  'https://images.unsplash.com/photo-1584467735871-8e85353a8413'
+];
+
+export function isRealUserUploadedImage(url?: string | null): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (trimmed.length === 0 || trimmed === 'null' || trimmed === 'undefined') return false;
+  if (KNOWN_DEMO_IMAGES.some(demo => trimmed.includes(demo))) return false;
+  return true;
 }
 
 // Helper to parse location coordinate object
@@ -44,6 +63,9 @@ function mapSupabaseReportToModel(d: any): AccessibilityReport {
     d.status === 'verified'
   ) && !isResolved && !isRejected;
 
+  const rawPhoto = d.image_url || d.photo_url;
+  const validPhoto = isRealUserUploadedImage(rawPhoto) ? rawPhoto : undefined;
+
   return {
     id: String(d.id),
     buildingId: d.building_id || 'bldg-iter-main',
@@ -55,7 +77,7 @@ function mapSupabaseReportToModel(d: any): AccessibilityReport {
     floorId: Number(d.floor_id ?? 0),
     floorName: d.floor_name || d.floor || 'Ground Floor',
     location: parseLocation(d.location),
-    photoUrl: d.image_url || d.photo_url || undefined,
+    photoUrl: validPhoto,
     submittedAt: d.submitted_at || d.created_at || new Date().toISOString(),
     reporterName: d.reporter_name || 'Anonymous Campus Reporter',
     verificationStatus: (isVerified || isResolved ? 'admin_verified' : isRejected ? 'rejected' : 'unverified') as VerificationStatus,
@@ -116,34 +138,23 @@ export const api = {
   },
 
   async getBuildings(): Promise<Building[]> {
-    try {
-      const res = await fetch('/api/buildings');
-      if (res.ok) return await res.json();
-    } catch {
-      // Fallback
-    }
     return MOCK_BUILDINGS;
   },
 
-  async getBuilding(id: string): Promise<Building | null> {
-    try {
-      const res = await fetch(`/api/buildings/${id}`);
-      if (res.ok) return await res.json();
-    } catch {
-      // Fallback
-    }
-    return MOCK_BUILDINGS.find(b => b.id === id) || MOCK_BUILDINGS[0];
+  async getFloorsForBuilding(buildingId: string): Promise<BuildingFloor[]> {
+    const building = MOCK_BUILDINGS.find(b => b.id === buildingId);
+    return building?.floors || [];
   },
 
-  async getFeatures(buildingId: string, floorId?: number): Promise<AccessibilityFeature[]> {
-    try {
-      const url = `/api/buildings/${buildingId}/features` + (floorId !== undefined ? `?floorId=${floorId}` : '');
-      const res = await fetch(url);
-      if (res.ok) return await res.json();
-    } catch {
-      // Fallback
-    }
-    return localFeatures.filter(f => f.buildingId === buildingId && (floorId === undefined || f.floorId === floorId));
+  async getRoomsForFloor(floorId: number, buildingId: string): Promise<BuildingRoom[]> {
+    const building = MOCK_BUILDINGS.find(b => b.id === buildingId);
+    const floor = building?.floors.find(f => f.floorId === floorId);
+    return floor?.rooms || [];
+  },
+
+  async getFeatures(buildingId: string): Promise<AccessibilityFeature[]> {
+    // Return localFeatures as defined in the file
+    return localFeatures.filter(f => f.buildingId === buildingId);
   },
 
   /**
@@ -308,6 +319,13 @@ export const api = {
 
       let updatePayload: any;
 
+      // Extract real user uploaded image if any
+      const realUploadedImage = isRealUserUploadedImage(reportData.photoUrl) ? reportData.photoUrl : null;
+      const existingImg = isRealUserUploadedImage(activeExisting.image_url || activeExisting.photo_url) 
+        ? (activeExisting.image_url || activeExisting.photo_url) 
+        : null;
+      const finalImg = realUploadedImage || existingImg || null;
+
       if (isAlreadyVerified) {
         // CASE 2: Active Verified (not resolved, not rejected) -> MERGE, keep 100% confidence, preserve admin verification
         console.log('[Supabase] Merging into Verified report. Preserving 100% confidence.');
@@ -321,8 +339,8 @@ export const api = {
           status: 'verified',
           resolution_status: 'pending',
           description: updatedDesc,
-          image_url: reportData.photoUrl || activeExisting.image_url || activeExisting.photo_url || null,
-          photo_url: reportData.photoUrl || activeExisting.photo_url || activeExisting.image_url || null,
+          image_url: finalImg,
+          photo_url: finalImg,
           updated_at: new Date().toISOString()
         };
       } else {
@@ -339,8 +357,8 @@ export const api = {
           resolution_status: 'pending',
           status: activeExisting.status || reportData.status || 'broken',
           description: updatedDesc,
-          image_url: reportData.photoUrl || activeExisting.image_url || activeExisting.photo_url || null,
-          photo_url: reportData.photoUrl || activeExisting.photo_url || activeExisting.image_url || null,
+          image_url: finalImg,
+          photo_url: finalImg,
           updated_at: new Date().toISOString()
         };
       }
@@ -379,10 +397,12 @@ export const api = {
       return mapSupabaseReportToModel(updatedRow);
     }
 
-    // CASE 3 & CASE 4: No active report found -> Create a BRAND NEW report
+    // CASE 3 & CASE 4: No active report found (either no prior reports, or all prior matching reports are Resolved/Rejected)
+    // -> Create a BRAND NEW report starting with initial confidence (40%, LOW, unverified)
     console.log('[Supabase] No active matching report found. Inserting new report into public.reports...');
     const newReportUuid = generateUUID();
     const locStr = typeof reportData.location === 'object' ? JSON.stringify(reportData.location) : (reportData.location || '');
+    const realUploadedImage = isRealUserUploadedImage(reportData.photoUrl) ? reportData.photoUrl : null;
 
     const { data: insertedRow, error: insertError } = await supabase
       .from('reports')
@@ -400,8 +420,8 @@ export const api = {
         status: reportData.status || 'broken',
         description: reportData.description || '',
         location: locStr,
-        image_url: reportData.photoUrl || null,
-        photo_url: reportData.photoUrl || null,
+        image_url: realUploadedImage,
+        photo_url: realUploadedImage,
         confidence_score: 40,
         confidence_level: 'LOW',
         verification_status: 'unverified',
@@ -419,12 +439,6 @@ export const api = {
     }
 
     console.log('[Supabase] new report inserted:', insertedRow.id);
-
-    // Insert into report_confirmations
-    await supabase.from('report_confirmations').insert([{
-      report_id: insertedRow.id,
-      reporter_name: reporterName
-    }]);
 
     // Insert into public.admin_reports queue
     const { error: adminQueueError } = await supabase.from('admin_reports').insert([{
@@ -446,7 +460,7 @@ export const api = {
    */
   async getReports(buildingId?: string): Promise<AccessibilityReport[]> {
     if (!isSupabaseConfigured()) {
-      return [];
+      return MOCK_REPORTS;
     }
 
     try {
@@ -455,10 +469,20 @@ export const api = {
       if (buildingId) {
         query = query.eq('building_id', buildingId);
       }
-      const { data, error } = await query;
+      let { data, error } = await query;
+      
+      // If clock skew error occurs (PGRST303: JWT issued at future)
+      if (error && (error.code === 'PGRST303' || error.message?.includes('JWT issued at future'))) {
+        console.warn('[Supabase] Clock skew detected on getReports. Retrying after brief delay...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const retryResult = await query;
+        data = retryResult.data;
+        error = retryResult.error;
+      }
+
       if (error) {
-        console.error('[Supabase Error] Supabase errors on getReports:', error);
-        throw new Error(error.message);
+        console.warn('[Supabase Warning] getReports query issue:', error.message);
+        return [];
       }
 
       if (data && Array.isArray(data)) {
@@ -467,13 +491,13 @@ export const api = {
       }
       return [];
     } catch (e: any) {
-      console.error('[Supabase Error] getReports failed:', e);
-      throw e;
+      console.warn('[Supabase Warning] getReports failed, falling back to cached reports:', e?.message || e);
+      return [];
     }
   },
 
   /**
-   * ADMIN VERIFY / REJECT: Updates public.reports, syncs queue, and automatically generates AI Fix Suggestions
+   * ADMIN VERIFY / REJECT: Updates public.reports and syncs public.admin_reports without deleting user report
    */
   async verifyReport(reportId: string, status: 'admin_verified' | 'rejected', notes?: string): Promise<AccessibilityReport | null> {
     const isVerified = status === 'admin_verified';
@@ -541,64 +565,32 @@ export const api = {
     }
 
     console.log(`[Supabase] Report ${reportId} marked as ${status} (confidence: ${isVerified ? 100 : 0}%)`);
+    const mapped = mapSupabaseReportToModel(updatedReport);
 
-    // 3. AUTO-GENERATE AI FIX SUGGESTION with rich guaranteed contents
-    if (isVerified) {
+    // If verified by admin AND report has a real user-uploaded image, generate and store a real recommendation
+    const hasRealImage = isRealUserUploadedImage(mapped.photoUrl);
+    if (isVerified && hasRealImage) {
       try {
-        console.log('[AI Fix] Generating AI recommendation for verified report...');
-        const reportRow = updatedReport;
-        const buildingName = reportRow.building_name || 'SOA ITER Academic Block C';
-        const featName = reportRow.feature_name || 'Campus Corridor Barrier';
-        const descText = reportRow.description || `Obstruction / accessibility issue reported at ${featName}`;
-
-        const problemStatement = descText.length > 5 ? descText : `Reported physical obstruction or accessibility barrier at ${featName}`;
-        const cardTitle = `Fix: ${featName}`;
-
-        const newRec: Recommendation = {
-          id: `rec-ai-${reportId}`,
-          buildingId: reportRow.building_id || 'bldg-iter-main',
-          buildingName: buildingName,
-          title: cardTitle,
-          problem: problemStatement,
-          solution: 'Clear pathway obstruction and install standard accessible ramp / handrail compliant with CPWD norms.',
-          severity: 'High',
-          disabilityTypesAffected: ['wheelchair', 'visual'],
-          estimatedUsersAffected: 150,
-          costCategory: 'Low',
-          estimatedCostAmount: '₹1,500 - ₹3,500',
-          expectedImpact: 'High',
-          priority: 'High',
-          impactScore: 88,
-          status: 'Pending',
-          floorId: Number(reportRow.floor_id ?? 0),
-          locationName: `${buildingName} — ${reportRow.floor_name || 'Ground Floor'}`,
-          sourceReportId: reportId
-        } as any;
-
-        // Add to local state immediately
-        const existsLocally = localRecommendations.some(r => r.id === newRec.id || (r as any).sourceReportId === reportId);
-        if (!existsLocally) {
-          localRecommendations.unshift(newRec);
-        }
-
-        // Post to server/FastAPI backend
-        fetch('/api/recommendations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newRec)
-        }).catch(() => {});
-
-        console.log('[AI Fix] Rich recommendation created:', cardTitle);
-      } catch (aiErr) {
-        console.warn('[AI Fix] Auto-recommendation generation failed (non-blocking):', aiErr);
+        await api.analyzeAndGenerateRecommendation({
+          reportId: mapped.id,
+          buildingId: mapped.buildingId,
+          buildingName: mapped.buildingName,
+          floorId: mapped.floorId,
+          userQuery: mapped.description,
+          reporterName: mapped.reporterName,
+          disabilityType: mapped.featureType === 'ramp' || mapped.featureType === 'door' ? 'wheelchair' : mapped.featureType === 'toilet' ? 'elderly' : 'visual',
+          photoUrl: mapped.photoUrl
+        });
+      } catch (genErr) {
+        console.warn('Notice on generating fix suggestion for verified report:', genErr);
       }
     }
 
-    return mapSupabaseReportToModel(updatedReport);
+    return mapped;
   },
 
   /**
-   * RESOLVE REPORT: Updates resolution status in public.reports and automatically completes linked Fix Suggestion
+   * RESOLVE REPORT: Updates resolution status in public.reports and clears active queue
    */
   async resolveReport(reportId: string): Promise<AccessibilityReport | null> {
     const now = new Date().toISOString();
@@ -633,24 +625,6 @@ export const api = {
       console.warn('[Supabase] Admin queue cleanup notice:', queueDeleteError.message);
     }
 
-    // 3. AUTO-UPDATE LINKED RECOMMENDATION STATUS TO 'Completed'
-    try {
-      localRecommendations.forEach(r => {
-        if ((r as any).sourceReportId === reportId || r.id === `rec-ai-${reportId}` || r.id.includes(reportId)) {
-          r.status = 'Completed';
-        }
-      });
-
-      // Update in server & Python backend
-      fetch(`/api/recommendations/by-report/${reportId}/resolve`, {
-        method: 'PATCH'
-      }).catch(() => {});
-
-      console.log(`[AI Fix] Linked recommendation marked as 'Completed' for report: ${reportId}`);
-    } catch (recErr) {
-      console.warn('[AI Fix] Could not update recommendation status on resolve:', recErr);
-    }
-
     console.log(`[Supabase] Report ${reportId} marked as resolved in public.reports`);
     return mapSupabaseReportToModel(resolvedReport);
   },
@@ -658,34 +632,79 @@ export const api = {
   async getRecommendations(buildingId?: string): Promise<Recommendation[]> {
     if (isSupabaseConfigured()) {
       try {
-        let query = supabase.from('recommendations').select('*');
+        let query = supabase
+          .from('recommendations')
+          .select('*')
+          .neq('status', 'Completed');
         if (buildingId) {
           query = query.eq('building_id', buildingId);
         }
         const { data, error } = await query;
-        if (!error && data && data.length > 0) {
-          return data.map((d: any) => ({
-            id: d.id,
-            buildingId: d.building_id || 'bldg-iter-main',
-            buildingName: d.building_name || 'ITER Main Academic Building',
-            title: d.title || 'Accessibility Recommendation',
-            problem: d.problem || d.description || 'Barrier reported',
-            solution: d.solution || 'Install accessible ramp or feature',
-            severity: d.severity || 'High',
-            disabilityTypesAffected: d.disability_types_affected || ['wheelchair'],
-            estimatedUsersAffected: d.estimated_users_affected || 150,
-            costCategory: d.cost_category || 'Low',
-            estimatedCostAmount: d.estimated_cost_amount || d.est_cost || '₹1,500 - ₹3,000',
-            expectedImpact: d.expected_impact || 'High',
-            priority: d.priority || 'High',
-            impactScore: d.impact_score || 85,
-            status: d.status || 'Pending',
-            floorId: d.floor_id ?? 0,
-            locationName: d.location_name || 'Main Corridor'
-          }));
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const recs: Recommendation[] = data
+            .filter((d: any) => d.status !== 'Completed')
+            .map((d: any) => ({
+              id: d.id,
+              reportId: d.report_id || d.reportId || undefined,
+              buildingId: d.building_id || 'bldg-iter-main',
+              buildingName: d.building_name || 'SOA ITER Academic Block C',
+              title: d.title || 'Accessibility Recommendation',
+              problem: d.problem || d.description || 'Barrier reported',
+              solution: d.solution || 'Install accessible ramp or feature',
+              severity: d.severity || 'High',
+              disabilityTypesAffected: d.disability_types_affected || ['wheelchair'],
+              estimatedUsersAffected: d.estimated_users_affected || 0,
+              costCategory: d.cost_category || 'Low',
+              estimatedCostAmount: d.estimated_cost_amount || d.est_cost || '₹0',
+              expectedImpact: d.expected_impact || 'High',
+              priority: d.priority || 'High',
+              impactScore: d.impact_score || 0,
+              status: d.status === 'In Progress' ? 'In Progress' : 'Pending',
+              floorId: d.floor_id ?? 0,
+              locationName: d.location_name || 'Campus Facility'
+            }));
+          localRecommendations = recs;
+          return recs;
+        }
+
+        // Secondary fallback to report_confirmations table if recommendations was empty
+        let confQuery = supabase
+          .from('report_confirmations')
+          .select('*')
+          .not('title', 'is', null)
+          .neq('status', 'Completed');
+        if (buildingId) {
+          confQuery = confQuery.eq('building_id', buildingId);
+        }
+        const { data: confData, error: confError } = await confQuery;
+        if (!confError && Array.isArray(confData) && confData.length > 0) {
+          const recs: Recommendation[] = confData
+            .filter((d: any) => d.status !== 'Completed')
+            .map((d: any) => ({
+              id: d.id,
+              reportId: d.report_id || d.reportId || undefined,
+              buildingId: d.building_id || 'bldg-iter-main',
+              buildingName: d.building_name || 'SOA ITER Academic Block C',
+              title: d.title || 'Accessibility Recommendation',
+              problem: d.problem || 'Barrier reported',
+              solution: d.solution || 'Install accessible ramp or feature',
+              severity: d.severity || 'High',
+              disabilityTypesAffected: d.disability_types_affected || ['wheelchair'],
+              estimatedUsersAffected: d.estimated_users_affected || 0,
+              costCategory: d.cost_category || 'Low',
+              estimatedCostAmount: d.estimated_cost_amount || '₹0',
+              expectedImpact: d.expected_impact || 'High',
+              priority: d.priority || 'High',
+              impactScore: d.impact_score || 0,
+              status: d.status === 'In Progress' ? 'In Progress' : 'Pending',
+              floorId: d.floor_id ?? 0,
+              locationName: d.location_name || 'Campus Facility'
+            }));
+          localRecommendations = recs;
+          return recs;
         }
       } catch (e) {
-        console.warn('Supabase getRecommendations fallback:', e);
+        console.warn('Supabase getRecommendations notice:', e);
       }
     }
 
@@ -693,45 +712,350 @@ export const api = {
       const url = '/api/recommendations' + (buildingId ? `?buildingId=${buildingId}` : '');
       const res = await fetch(url);
       if (res.ok) {
-        const serverRecs = await res.json();
-        if (Array.isArray(serverRecs) && serverRecs.length > 0) {
-          return serverRecs;
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const activeData = data.filter((d: any) => d.status !== 'Completed');
+          localRecommendations = activeData;
+          return activeData;
         }
       }
     } catch {
-      // Fallback
+      // Fallback to local memory
     }
-    return buildingId ? localRecommendations.filter(r => r.buildingId === buildingId) : localRecommendations;
+    const filtered = localRecommendations.filter(r => r.status !== 'Completed');
+    return buildingId ? filtered.filter(r => r.buildingId === buildingId) : filtered;
   },
 
-  async updateRecommendationStatus(id: string, status: 'Pending' | 'In Progress' | 'Completed'): Promise<Recommendation | null> {
+  async updateRecommendationStatus(id: string, status: 'Pending' | 'In Progress' | 'Completed', associatedReportId?: string): Promise<Recommendation | null> {
+    const now = new Date().toISOString();
+    let rec = localRecommendations.find(r => r.id === id || r.reportId === id || (associatedReportId && r.reportId === associatedReportId));
+    const effectiveReportId = associatedReportId || rec?.reportId;
+
+    if (rec) {
+      rec.status = status;
+    }
+
+    // 2. Persist synchronously into Supabase (both public.recommendations and public.report_confirmations)
     if (isSupabaseConfigured()) {
       try {
-        const { error } = await supabase.from('recommendations').update({ status }).eq('id', id);
-        if (!error) {
-          const rec = localRecommendations.find(r => r.id === id);
-          if (rec) rec.status = status;
+        const targetReportUuid = (effectiveReportId && isUUID(effectiveReportId)) 
+          ? effectiveReportId 
+          : (isUUID(id) ? id : null);
+        const targetRecUuid = isUUID(id) ? id : (isUUID(rec?.id) ? rec?.id : null);
+
+        // 1. Update public.recommendations
+        if (targetRecUuid) {
+          await supabase
+            .from('recommendations')
+            .update({ status, updated_at: now })
+            .eq('id', targetRecUuid);
         }
+        if (targetReportUuid) {
+          await supabase
+            .from('recommendations')
+            .update({ status, updated_at: now })
+            .eq('report_id', targetReportUuid);
+        }
+
+        // 2. Concurrently update public.report_confirmations
+        if (targetReportUuid) {
+          await supabase
+            .from('report_confirmations')
+            .update({ status, updated_at: now })
+            .eq('report_id', targetReportUuid);
+        }
+        if (targetRecUuid) {
+          await supabase
+            .from('report_confirmations')
+            .update({ status, updated_at: now })
+            .eq('id', targetRecUuid);
+        }
+
+        // 3. When Completed, update the original report associated with this Fix Suggestion to 'resolved' (Solved)
+        if (status === 'Completed' && targetReportUuid) {
+          const { error: reportUpdateError } = await supabase
+            .from('reports')
+            .update({
+              status: 'resolved',
+              resolution_status: 'resolved',
+              verification_status: 'verified',
+              confidence_score: 100,
+              confidence_level: 'HIGH',
+              updated_at: now
+            })
+            .eq('id', targetReportUuid);
+
+          if (reportUpdateError) {
+            console.warn('[Supabase] Original report resolution notice:', reportUpdateError.message);
+          }
+
+          // Clean up active queue
+          const { error: adminQueueError } = await supabase
+            .from('admin_reports')
+            .delete()
+            .eq('report_id', targetReportUuid);
+
+          if (adminQueueError) {
+            console.warn('[Supabase] Admin queue cleanup notice:', adminQueueError.message);
+          }
+
+          console.log(`[Supabase] Original report ${targetReportUuid} marked as Solved (resolved) via completed fix suggestion`);
+        }
+
+        console.log(`[Supabase] Persisted fix suggestion status='${status}' for id=${id}, report_id=${targetReportUuid}`);
       } catch (e) {
-        console.warn('Supabase updateRecommendationStatus error:', e);
+        console.error('Supabase updateRecommendationStatus error:', e);
+        throw e;
       }
     }
 
+    if (status === 'Completed') {
+      localRecommendations = localRecommendations.filter(r => r.id !== id && r.reportId !== id && (!effectiveReportId || r.reportId !== effectiveReportId));
+    }
+
+    // 3. Update backend server cache
     try {
       const headers = await getAuthHeaders();
       const res = await fetch(`/api/recommendations/${id}/status`, {
         method: 'PATCH',
         headers,
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status, reportId: effectiveReportId })
       });
-      if (res.ok) return await res.json();
+      if (res.ok) {
+        const updated = await res.json();
+        return updated;
+      }
     } catch {
       // Fallback
     }
 
-    const rec = localRecommendations.find(r => r.id === id);
-    if (rec) rec.status = status;
-    return rec || null;
+    return rec || ({ id, reportId: effectiveReportId, status } as any);
+  },
+
+  /**
+   * SOA-AccessTwin AI Engine: Analyzes report & generates real Fix Suggestion
+   */
+  async analyzeAndGenerateRecommendation(params: {
+    reportId?: string;
+    buildingId?: string;
+    buildingName?: string;
+    floorId?: number;
+    userQuery: string;
+    reporterName?: string;
+    disabilityType?: string;
+    photoUrl?: string;
+  }): Promise<Recommendation | null> {
+    // 1. Deduplication check: Do not create duplicate recommendations for the same report ID
+    if (params.reportId) {
+      if (isSupabaseConfigured()) {
+        try {
+          const { data: existingRow } = await supabase
+            .from('recommendations')
+            .select('*')
+            .eq('report_id', params.reportId)
+            .maybeSingle();
+
+          if (existingRow) {
+            console.log('[Supabase] Recommendation already exists for report:', params.reportId);
+            return {
+              id: existingRow.id,
+              reportId: existingRow.report_id,
+              buildingId: existingRow.building_id,
+              buildingName: existingRow.building_name,
+              title: existingRow.title,
+              problem: existingRow.problem,
+              solution: existingRow.solution,
+              severity: existingRow.severity,
+              disabilityTypesAffected: existingRow.disability_types_affected || ['wheelchair'],
+              estimatedUsersAffected: existingRow.estimated_users_affected || 0,
+              costCategory: existingRow.cost_category || 'Low',
+              estimatedCostAmount: existingRow.estimated_cost_amount || '₹0',
+              expectedImpact: existingRow.expected_impact || 'High',
+              priority: existingRow.priority || 'High',
+              impactScore: existingRow.impact_score || 0,
+              status: existingRow.status || 'Pending',
+              floorId: existingRow.floor_id ?? 0,
+              locationName: existingRow.location_name || 'Campus Facility'
+            };
+          }
+
+          // Also check report_confirmations for duplicate prevention
+          const { data: existingConf } = await supabase
+            .from('report_confirmations')
+            .select('*')
+            .eq('report_id', params.reportId)
+            .maybeSingle();
+
+          if (existingConf && existingConf.title) {
+            console.log('[Supabase] Fix Suggestion already exists in report_confirmations for report:', params.reportId);
+            return {
+              id: existingConf.id,
+              reportId: existingConf.report_id,
+              buildingId: existingConf.building_id || 'bldg-iter-main',
+              buildingName: existingConf.building_name || 'SOA ITER Academic Block C',
+              title: existingConf.title,
+              problem: existingConf.problem,
+              solution: existingConf.solution,
+              severity: existingConf.severity || 'High',
+              disabilityTypesAffected: existingConf.disability_types_affected || ['wheelchair'],
+              estimatedUsersAffected: existingConf.estimated_users_affected || 0,
+              costCategory: existingConf.cost_category || 'Low',
+              estimatedCostAmount: existingConf.estimated_cost_amount || '₹0',
+              expectedImpact: existingConf.expected_impact || 'High',
+              priority: existingConf.priority || 'High',
+              impactScore: existingConf.impact_score || 0,
+              status: existingConf.status || 'Pending',
+              floorId: existingConf.floor_id ?? 0,
+              locationName: existingConf.location_name || 'Campus Facility'
+            };
+          }
+        } catch (supErr) {
+          console.warn('Notice checking existing recommendation:', supErr);
+        }
+      }
+
+      const existingLocal = localRecommendations.find(r => r.reportId === params.reportId);
+      if (existingLocal) {
+        return existingLocal;
+      }
+    }
+
+    try {
+      const res = await fetch('/api/reports/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          report_id: params.reportId,
+          reportId: params.reportId,
+          user_query: params.userQuery,
+          building_name: params.buildingName || 'SOA ITER Academic Block C',
+          building_id: params.buildingId || 'bldg-iter-main',
+          floor_id: params.floorId ?? 0,
+          reporter_name: params.reporterName || 'Campus Reporter',
+          disability_type: params.disabilityType || 'wheelchair',
+          image: params.photoUrl
+        })
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        const recData = json?.data;
+        if (recData) {
+          const recModel: Recommendation = {
+            id: recData.id || `rec-${Date.now()}`,
+            reportId: params.reportId || recData.reportId || recData.report_id,
+            buildingId: recData.buildingId || params.buildingId || 'bldg-iter-main',
+            buildingName: recData.buildingName || params.buildingName || 'SOA ITER Academic Block C',
+            title: recData.title || `Fix: ${params.userQuery.slice(0, 50)}`,
+            problem: recData.problem || recData.issue || params.userQuery,
+            solution: recData.solution || recData.recommendation || 'Remediate barrier',
+            severity: recData.priority || 'High',
+            disabilityTypesAffected: recData.disability_types_affected || [params.disabilityType || 'wheelchair'],
+            estimatedUsersAffected: recData.estimated_users_affected || 150,
+            costCategory: recData.costCategory || 'Low',
+            estimatedCostAmount: recData.estimated_cost_inr || '₹1,500 - ₹3,500',
+            expectedImpact: (recData.impact_score || 85) >= 80 ? 'High' : 'Medium',
+            priority: recData.priority || 'High',
+            impactScore: recData.impact_score || 85,
+            status: 'Pending',
+            floorId: params.floorId ?? 0,
+            locationName: recData.buildingName || params.buildingName || 'Campus Facility'
+          };
+
+          // If Supabase is configured, persist the SAME DATA to both public.recommendations and public.report_confirmations
+          if (isSupabaseConfigured()) {
+            try {
+              const validReportUuid = isUUID(params.reportId) ? params.reportId : null;
+
+              // 1. Insert into public.recommendations
+              const recPayload: any = {
+                building_id: recModel.buildingId,
+                building_name: recModel.buildingName,
+                title: recModel.title,
+                problem: recModel.problem,
+                solution: recModel.solution,
+                severity: recModel.severity,
+                priority: recModel.priority,
+                cost_category: recModel.costCategory,
+                estimated_cost_amount: recModel.estimatedCostAmount,
+                expected_impact: recModel.expectedImpact,
+                impact_score: recModel.impactScore,
+                status: 'Pending',
+                floor_id: recModel.floorId,
+                location_name: recModel.locationName,
+                disability_types_affected: recModel.disabilityTypesAffected,
+                estimated_users_affected: recModel.estimatedUsersAffected,
+                updated_at: new Date().toISOString()
+              };
+
+              if (validReportUuid) {
+                recPayload.report_id = validReportUuid;
+              }
+              if (isUUID(recModel.id)) {
+                recPayload.id = recModel.id;
+              }
+
+              const { data: savedRec } = await supabase
+                .from('recommendations')
+                .upsert([recPayload], validReportUuid ? { onConflict: 'report_id' } : undefined)
+                .select()
+                .maybeSingle();
+
+              if (savedRec && savedRec.id) {
+                recModel.id = savedRec.id;
+              }
+
+              // 2. Save the SAME Fix Suggestion data into public.report_confirmations
+              if (validReportUuid) {
+                const confPayload: any = {
+                  report_id: validReportUuid,
+                  reporter_name: params.reporterName || 'Campus Reporter',
+                  title: recModel.title,
+                  problem: recModel.problem,
+                  solution: recModel.solution,
+                  building_id: recModel.buildingId,
+                  building_name: recModel.buildingName,
+                  floor_id: recModel.floorId,
+                  location_name: recModel.locationName,
+                  severity: recModel.severity,
+                  priority: recModel.priority,
+                  cost_category: recModel.costCategory,
+                  estimated_cost_amount: recModel.estimatedCostAmount,
+                  expected_impact: recModel.expectedImpact,
+                  impact_score: recModel.impactScore,
+                  status: 'Pending',
+                  disability_types_affected: recModel.disabilityTypesAffected,
+                  estimated_users_affected: recModel.estimatedUsersAffected,
+                  updated_at: new Date().toISOString()
+                };
+
+                const { data: savedConf } = await supabase
+                  .from('report_confirmations')
+                  .upsert([confPayload], { onConflict: 'report_id' })
+                  .select()
+                  .maybeSingle();
+
+                if (savedConf && savedConf.id && !isUUID(recModel.id)) {
+                  recModel.id = savedConf.id;
+                }
+                console.log('[Supabase] Fix suggestion synchronized with report_confirmations for report:', validReportUuid);
+              }
+            } catch (supErr) {
+              console.warn('Notice saving recommendation & confirmation to Supabase:', supErr);
+            }
+          }
+
+          // Add to local state if not already present
+          if (!localRecommendations.some(r => r.id === recModel.id || (params.reportId && r.reportId === params.reportId))) {
+            localRecommendations.unshift(recModel);
+          }
+          return recModel;
+        }
+      }
+    } catch (e) {
+      console.warn('Error analyzing report for recommendations:', e);
+    }
+    return null;
   },
 
   async findRoute(startNodeId: string, targetNodeId: string, profile: DisabilityProfile): Promise<RouteResult | null> {
@@ -751,21 +1075,35 @@ export const api = {
   async analyzeImage(photoData: string): Promise<AiDetectionResult> {
     const res = await fetch('/api/detect', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify({ image: photoData })
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || `Vision detection failed with status ${res.status}`);
+
+    const rawText = await res.text();
+    let data: any = null;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      throw new Error('AI detection service returned an invalid response.');
     }
-    const data = await res.json();
-    return {
-      imageId: data.imageId || `img-${Date.now()}`,
-      imageUrl: data.imageUrl || photoData,
-      analyzedAt: data.analyzedAt || new Date().toISOString(),
-      overallAccessibility: data.overallAccessibility || (data.detectedObjects?.some((o: any) => o.status === 'broken') ? 'Moderate' : 'High'),
-      summary: data.summary || data.message || 'AI visual accessibility analysis completed.',
-      detectedObjects: data.detectedObjects || data.results || []
-    };
+
+    if (!res.ok || (data && data.status === 'error')) {
+      throw new Error(data?.message || data?.error || 'AI detection failed.');
+    }
+
+    if (data && (data.status === 'success' || data.results || data.detectedObjects)) {
+      const detected = data.detectedObjects || data.results || [];
+      return {
+        imageId: data.imageId || `img-${Date.now()}`,
+        imageUrl: data.imageUrl || photoData,
+        analyzedAt: data.analyzedAt || new Date().toISOString(),
+        overallAccessibility: data.overallAccessibility || (detected.some((o: any) => o.status === 'broken') ? 'Moderate' : 'High'),
+        summary: data.summary || data.message || (detected.length > 0 ? `AI identified ${detected.length} accessibility elements.` : 'No accessibility features detected.'),
+        detectedObjects: detected
+      };
+    }
+
+    throw new Error('No valid detection result returned from AI model.');
   }
 };
+

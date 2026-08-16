@@ -22,7 +22,7 @@ import {
 
 interface ReportIssueProps {
   buildings: Building[];
-  selectedBuilding: Building;
+  selectedBuilding: Building | null;
   reports: AccessibilityReport[];
   onReportSubmitted: (newReport: AccessibilityReport) => void;
   prefilledLocation?: { buildingId: string; floorId: number; x: number; y: number } | null;
@@ -35,7 +35,7 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
   onReportSubmitted,
   prefilledLocation
 }) => {
-  const [buildingId, setBuildingId] = useState(prefilledLocation?.buildingId || selectedBuilding.id);
+  const [buildingId, setBuildingId] = useState(prefilledLocation?.buildingId || selectedBuilding?.id || '');
   const selectedBuildingData = buildings.find(b => b.id === buildingId) || selectedBuilding || buildings[0];
 
   const availableFloors = selectedBuildingData?.floors || [];
@@ -153,7 +153,7 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
     try {
       const newReport = await api.submitReport({
         buildingId,
-        buildingName: selectedBuildingData.name,
+        buildingName: selectedBuildingData?.name || 'Unknown Building',
         featureName: selectedRoom.name,
         featureType,
         status,
@@ -161,7 +161,7 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
         floorId,
         floorName: selectedFloorData?.name || (floorId === 0 ? 'Ground Floor' : `Floor ${floorId}`),
         location: pinLocation,
-        photoUrl: photoPreview || 'https://images.unsplash.com/photo-1584467735871-8e85353a8413?auto=format&fit=crop&q=80&w=600',
+        photoUrl: photoPreview || undefined,
         reporterName: reporterName.trim() || 'Anonymous Campus Reporter'
       });
 
@@ -253,10 +253,10 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
             </h4>
             <p className="text-xs text-emerald-700">
               {isSuccessReportVerified
-                ? `Your submission has been recorded for ${submitSuccessInfo.buildingName || selectedBuildingData.name} (${submitSuccessInfo.floorName || selectedFloorData?.name} - ${submitSuccessInfo.featureName}). 100% confidence level is preserved and queued for resolution.`
+                ? `Your submission has been recorded for ${submitSuccessInfo.buildingName || selectedBuildingData?.name || 'Unknown Building'} (${submitSuccessInfo.floorName || selectedFloorData?.name} - ${submitSuccessInfo.featureName}). 100% confidence level is preserved and queued for resolution.`
                 : isSuccessReportMerged
-                ? `Your submission confirms an active issue with ${submitSuccessInfo.confirmationsCount} community reports recorded for ${submitSuccessInfo.buildingName || selectedBuildingData.name} (${submitSuccessInfo.floorName || selectedFloorData?.name}).`
-                : `Your submission has been logged for ${submitSuccessInfo.buildingName || selectedBuildingData.name} (${submitSuccessInfo.floorName || selectedFloorData?.name}). Campus auditors will verify this report.`}
+                ? `Your submission confirms an active issue with ${submitSuccessInfo.confirmationsCount} community reports recorded for ${submitSuccessInfo.buildingName || selectedBuildingData?.name || 'Unknown Building'} (${submitSuccessInfo.floorName || selectedFloorData?.name}).`
+                : `Your submission has been logged for ${submitSuccessInfo.buildingName || selectedBuildingData?.name || 'Unknown Building'} (${submitSuccessInfo.floorName || selectedFloorData?.name}). Campus auditors will verify this report.`}
             </p>
             <button
               onClick={() => {
@@ -359,7 +359,7 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
                   <span className="font-bold">Selected: {selectedRoom.name}</span>
                 </div>
                 <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-100 px-2 py-0.5 rounded">
-                  {selectedBuildingData.code} - {selectedFloorData?.name}
+                  {selectedBuildingData?.code || 'N/A'} - {selectedFloorData?.name}
                 </span>
               </div>
             ) : (
@@ -495,7 +495,7 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
             </div>
             <h3 className="text-lg font-bold text-slate-900">Set Pin Location on Floor Map</h3>
             <p className="text-xs text-slate-500">
-              Showing <strong className="text-slate-800">{selectedBuildingData.name}</strong> ({selectedFloorData?.name}). Click on the map to mark barrier location.
+              Showing <strong className="text-slate-800">{selectedBuildingData?.name || 'Unknown Building'}</strong> ({selectedFloorData?.name}). Click on the map to mark barrier location.
             </p>
           </div>
 

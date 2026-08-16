@@ -1,35 +1,12 @@
-from enum import Enum
+import os
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from services.accessibility_router import router_engine
+from data.demo_building import get_floor_plan_url, get_campus_map_url
 
 router = APIRouter()
-
-# Clean Campus Dropdowns for Swagger UI
-class CampusNode(str, Enum):
-    MAIN_ENTRANCE = "main_entrance"
-    BLOCK_A = "block_a_entrance"
-    BLOCK_B = "block_b_entrance"
-    BLOCK_C = "block_c_entrance"
-    BLOCK_D = "block_d_entrance"
-    BLOCK_E = "block_e_entrance"
-    BLOCK_F = "block_f_entrance"
-    DATA_SCIENCE_BLOCK = "ds_block_entrance"
-    AUDITORIUM = "auditorium_entrance"
-    SC_BLOCK = "sc_block_entrance"
-    LIBRARY = "library_entrance"
-    CAFETERIA = "iter_cafeteria"
-    FOOTBALL_GROUND = "football_ground"
-    CRICKET_GROUND = "cricket_ground"
-    PARKING = "parking_area"
-    ROUNDABOUT = "roundabout"
-
-class DisabilityProfile(str, Enum):
-    WHEELCHAIR = "wheelchair"
-    BLIND = "blind"
-    STANDARD = "standard"
 
 class NavigateRequest(BaseModel):
     startNodeId: Optional[str] = None
@@ -41,36 +18,62 @@ class NavigateRequest(BaseModel):
 def _normalize_node_id(node_id: Optional[str]) -> str:
     if not node_id:
         return "main_entrance"
-    n = node_id.strip().lower()
-    if "library" in n:
+    n = node_id.strip()
+    
+    # Direct match in graph nodes
+    if n in router_engine.nodes_data:
+        return n
+    
+    n_lower = n.lower()
+    # Check lowercase match
+    for k in router_engine.nodes_data.keys():
+        if k.lower() == n_lower:
+            return k
+            
+    # Fuzzy alias matching for campus buildings
+    if "library" in n_lower:
         return "library_entrance"
-    if "auditorium" in n:
+    if "auditorium" in n_lower:
         return "auditorium_entrance"
-    if "cafeteria" in n:
+    if "cafeteria" in n_lower:
         return "iter_cafeteria"
-    if "block-a" in n or "block_a" in n:
+    if "block-a" in n_lower or "block_a" in n_lower:
         return "block_a_entrance"
-    if "block-b" in n or "block_b" in n:
+    if "block-b" in n_lower or "block_b" in n_lower:
         return "block_b_entrance"
-    if "block-c" in n or "block_c" in n:
-        return "block_c_entrance"
-    if "block-d" in n or "block_d" in n:
+    if "block-c" in n_lower or "block_c" in n_lower:
+        return "block_c_football_entrance"
+    if "block-d" in n_lower or "block_d" in n_lower:
         return "block_d_entrance"
-    if "block-e" in n or "block_e" in n:
-        return "block_e_entrance"
+    if "block-e" in n_lower or "block_e" in n_lower:
+        return "block_e_main_entrance"
+    if "block-f" in n_lower or "block_f" in n_lower:
+        return "block_f_entrance"
+    if "ds_block" in n_lower or "data_science" in n_lower:
+        return "ds_block_entrance"
+    if "sc_block" in n_lower:
+        return "sc_block_entrance"
+    if "parking" in n_lower:
+        return "parking_area"
+    if "roundabout" in n_lower:
+        return "roundabout"
+        
     return n
 
 def _build_route_response(start_id: str, end_id: str, profile: str) -> Dict[str, Any]:
+    norm_start = _normalize_node_id(start_id)
+    norm_end = _normalize_node_id(end_id)
+
     route_result = router_engine.find_route(
-        start_id=start_id,
-        end_id=end_id,
+        start_id=norm_start,
+        end_id=norm_end,
         user_profile=profile
     )
 
     if not route_result or "error" in route_result:
         raise HTTPException(
             status_code=404,
-            detail=route_result.get("error", f"No accessible route found between '{start_id}' and '{end_id}' for {profile} profile.")
+            detail=route_result.get("error", f"No accessible route found between '{norm_start}' and '{norm_end}' for {profile} profile.")
         )
 
     total_dist = route_result.get("total_distance_meters", 0)
@@ -79,83 +82,127 @@ def _build_route_response(start_id: str, end_id: str, profile: str) -> Dict[str,
     raw_steps = route_result.get("steps", [])
 
     formatted_steps = []
+    involved_floors = []
+    
+    # 1. Collect all involved floor plans
+    for nid in path_nodes:
+        node_info = router_engine.nodes_data.get(nid, {})
+        fl = node_info.get("floor", 0)
+        bldg = node_info.get("building_id", "soa_iter_campus")
+        floor_key = f"{bldg}_f{fl}"
+        if floor_key not in [f.get("key") for f in involved_floors]:
+            floor_plan_img = get_floor_plan_url("soa_iter_campus", bldg, fl)
+            involved_floors.append({
+                "key": floor_key,
+                "buildingId": bldg,
+                "floor": fl,
+                "floorName": f"Floor {fl}" if fl > 0 else "Ground Floor",
+                "floorPlanUrl": floor_plan_img
+            })
+
+    # 2. Build concise step items
     for i, step_text in enumerate(raw_steps):
-        node_id = path_nodes[i] if i < len(path_nodes) else end_id
-        formatted_steps.append({
+        step_obj = {
             "stepNumber": i + 1,
             "instruction": step_text,
             "floorId": 0,
-            "floorName": "Ground Floor",
+            "floorName": "Wayfinding Point",
+            "buildingId": "soa_iter_campus",
             "distanceMeters": int(total_dist / max(1, len(raw_steps))),
-            "nodeId": node_id,
-            "featureTypeUsed": "ramp" if "ramp" in step_text.lower() else "lift" if "elevator" in step_text.lower() else "corridor"
-        })
+            "nodeId": f"step-{i+1}",
+            "nodeLabel": step_text,
+            "featureTypeUsed": "elevator" if "elevator" in step_text.lower() or "lift" in step_text.lower() else "stairs" if "stairs" in step_text.lower() else "bridge" if "bridge" in step_text.lower() or "passage" in step_text.lower() else "ramp" if "ramp" in step_text.lower() else "corridor"
+        }
+        formatted_steps.append(step_obj)
+
+    start_info = router_engine.nodes_data.get(norm_start, {})
+    end_info = router_engine.nodes_data.get(norm_end, {})
 
     accessible_features = []
     if profile == "wheelchair":
-        accessible_features.append("Wheelchair Accessible Ramp (No Stairs)")
-        accessible_features.append("Smooth Surface Pathway")
+        accessible_features.append("Step-Free Wheelchair Access (Lifts, Ramps & Bridges)")
+        accessible_features.append("Continuous Level Surface")
     else:
         accessible_features.append("Tactile Ground Indicators")
+        accessible_features.append("Standard Wayfinding")
 
-    voice_parts = [f"Navigating from {start_id.replace('_', ' ').title()} to {end_id.replace('_', ' ').title()} using {profile} accessible route."]
-    for i, step_text in enumerate(raw_steps):
-        voice_parts.append(f"Step {i + 1}: {step_text}")
-    voice_parts.append(f"Total distance is {total_dist} meters. Estimated time is {max(1, int(est_mins))} minutes.")
-    voice_msg = " ".join(voice_parts)
+    voice_msg = route_result.get("voice_guidance") or f"Go from {start_info.get('label', norm_start)} to {end_info.get('label', norm_end)}. Total distance is {total_dist} meters."
 
     return {
         "status": "success",
-        # Fields expected by navigationApi.ts & AccessibleNavigation.tsx
-        "start_location": start_id,
-        "end_location": end_id,
+        "start_location": norm_start,
+        "end_location": norm_end,
+        "start_label": start_info.get("label", norm_start),
+        "end_label": end_info.get("label", norm_end),
         "profile_used": profile,
         "total_distance_meters": total_dist,
         "estimated_time_minutes": max(1, int(est_mins)),
         "path_nodes": path_nodes,
         "step_by_step_directions": raw_steps,
-        # Legacy/Twin digital map fields
+        "steps": formatted_steps,
+        "involved_floors": involved_floors,
+        "accessible_features": accessible_features,
+        "voice_guidance": voice_msg,
+        "campus_map_url": get_campus_map_url("soa_iter_campus"),
         "fromNode": {
-            "id": start_id,
-            "name": start_id.replace("_", " ").title(),
-            "floorId": 0,
-            "buildingId": "soa_iter_campus",
-            "type": "entrance",
-            "isAccessible": True,
-            "x": 20,
-            "y": 20
+            "id": norm_start,
+            "name": start_info.get("label", norm_start),
+            "floorId": start_info.get("floor", 0),
+            "buildingId": start_info.get("building_id", "soa_iter_campus"),
+            "type": start_info.get("type", "entrance"),
+            "isAccessible": start_info.get("accessible", True),
+            "x": start_info.get("coords", {}).get("x", 20),
+            "y": start_info.get("coords", {}).get("y", 20)
         },
         "toNode": {
-            "id": end_id,
-            "name": end_id.replace("_", " ").title(),
-            "floorId": 0,
-            "buildingId": "soa_iter_campus",
-            "type": "room",
-            "isAccessible": True,
-            "x": 80,
-            "y": 80
-        },
-        "profile": profile,
-        "totalDistanceMeters": total_dist,
-        "estimatedMinutes": max(1, int(est_mins)),
-        "pathNodeIds": path_nodes,
-        "steps": formatted_steps,
-        "warnings": ["Caution: Active campus pedestrian zone ahead"] if profile == "wheelchair" else [],
-        "accessibleFeaturesUsed": accessible_features,
-        "voice_navigation": voice_msg
+            "id": norm_end,
+            "name": end_info.get("label", norm_end),
+            "floorId": end_info.get("floor", 0),
+            "buildingId": end_info.get("building_id", "soa_iter_campus"),
+            "type": end_info.get("type", "room"),
+            "isAccessible": end_info.get("accessible", True),
+            "x": end_info.get("coords", {}).get("x", 80),
+            "y": end_info.get("coords", {}).get("y", 80)
+        }
     }
 
+@router.get("/navigate")
+@router.get("/api/navigate")
+def navigate_get(
+    start: Optional[str] = Query(None, description="Start node identifier or room code (e.g. c_f2_r05, main_entrance)"),
+    end: Optional[str] = Query(None, description="Destination node identifier or room code (e.g. e_f5_r03)"),
+    profile: Optional[str] = Query("wheelchair", description="User accessibility profile (wheelchair, blind, standard)")
+):
+    if not start or not end:
+        raise HTTPException(
+            status_code=422,
+            detail="Both 'start' and 'end' query parameters are required for campus navigation."
+        )
+    return _build_route_response(start, end, profile)
+
 @router.post("/navigate")
-async def post_accessible_route(payload: NavigateRequest):
-    start_id = _normalize_node_id(payload.startNodeId or payload.start)
-    end_id = _normalize_node_id(payload.targetNodeId or payload.end or "library_entrance")
-    profile = (payload.profile or "wheelchair").lower()
+@router.post("/api/navigate")
+def navigate_post(req: NavigateRequest):
+    start_id = req.start or req.startNodeId
+    end_id = req.end or req.targetNodeId
+    profile = req.profile or "wheelchair"
+
+    if not start_id or not end_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Both 'start' (or 'startNodeId') and 'end' (or 'targetNodeId') are required."
+        )
     return _build_route_response(start_id, end_id, profile)
 
-@router.get("/navigate")
-def get_accessible_route(
-    start: CampusNode = Query(CampusNode.MAIN_ENTRANCE, description="Select start location from dropdown"),
-    end: CampusNode = Query(CampusNode.LIBRARY, description="Select destination from dropdown"),
-    profile: DisabilityProfile = Query(DisabilityProfile.WHEELCHAIR, description="Select accessibility profile")
-):
-    return _build_route_response(start.value, end.value, profile.value)
+@router.get("/nodes")
+@router.get("/api/nodes")
+def get_all_campus_nodes():
+    """Returns all 374 campus nodes categorized by building and floor for frontend dropdown selectors"""
+    nodes_list = []
+    for nid, data in router_engine.nodes_data.items():
+        nodes_list.append(data)
+    return {
+        "status": "success",
+        "total_nodes": len(nodes_list),
+        "nodes": nodes_list
+    }

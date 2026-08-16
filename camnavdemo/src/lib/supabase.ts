@@ -54,6 +54,7 @@ export const isSupabaseConfigured = (): boolean => {
 // Custom fetch implementation for Supabase client
 // Tries direct client-side fetch first. If browser blocks direct cross-origin request
 // in preview iframe (NetworkError / Failed to fetch), seamlessly falls back to same-origin proxy.
+// Also gracefully handles PostgREST PGRST303 (JWT issued at future clock-skew) errors.
 const safeFetch: typeof fetch = async (input, init) => {
   let requestUrl = '';
   if (typeof input === 'string') {
@@ -64,31 +65,64 @@ const safeFetch: typeof fetch = async (input, init) => {
     requestUrl = (input as any).toString();
   }
 
-  try {
-    const response = await fetch(input, init);
-    return response;
-  } catch (err: any) {
-    if (requestUrl && (requestUrl.includes('supabase.co') || (supabaseUrl && requestUrl.includes(supabaseUrl)))) {
-      try {
-        const parsedUrl = new URL(requestUrl);
-        const proxyPath = `/api/supabase-proxy${parsedUrl.pathname}${parsedUrl.search}`;
+  const executeFetch = async (targetInput: typeof input, targetInit?: RequestInit): Promise<Response> => {
+    try {
+      const response = await fetch(targetInput, targetInit);
+      return response;
+    } catch (err: any) {
+      if (requestUrl && (requestUrl.includes('supabase.co') || (supabaseUrl && requestUrl.includes(supabaseUrl)))) {
+        try {
+          const parsedUrl = new URL(requestUrl);
+          const proxyPath = `/api/supabase-proxy${parsedUrl.pathname}${parsedUrl.search}`;
 
-        let proxyOptions = init;
-        if (input instanceof Request && !init) {
-          proxyOptions = {
-            method: input.method,
-            headers: input.headers,
-            body: input.body,
-          };
+          let proxyOptions = targetInit;
+          if (targetInput instanceof Request && !targetInit) {
+            proxyOptions = {
+              method: targetInput.method,
+              headers: targetInput.headers,
+              body: targetInput.body,
+            };
+          }
+
+          return await fetch(proxyPath, proxyOptions);
+        } catch (proxyErr) {
+          console.warn('Fallback Supabase proxy fetch failed:', proxyErr);
         }
-
-        return await fetch(proxyPath, proxyOptions);
-      } catch (proxyErr) {
-        console.warn('Fallback Supabase proxy fetch failed:', proxyErr);
       }
+      throw err;
     }
-    throw err;
+  };
+
+  const response = await executeFetch(input, init);
+
+  // Auto-recover from PGRST303 ("JWT issued at future" clock-skew error)
+  if (response.status === 401 || response.status === 400) {
+    try {
+      const clone = response.clone();
+      const text = await clone.text();
+      if (text.includes('JWT issued at future') || text.includes('PGRST303')) {
+        console.warn('[Supabase safeFetch] Clock skew detected (JWT issued at future). Retrying with sync delay...');
+        await new Promise((res) => setTimeout(res, 800));
+
+        // Retry initial fetch
+        const retried = await executeFetch(input, init);
+        if (retried.ok) return retried;
+
+        // Fallback retry using anon key for public endpoints
+        if (init && init.headers) {
+          const fallbackHeaders = new Headers(init.headers as any);
+          fallbackHeaders.set('Authorization', `Bearer ${supabaseAnonKey}`);
+          fallbackHeaders.set('apikey', supabaseAnonKey);
+          const anonRetried = await executeFetch(input, { ...init, headers: fallbackHeaders });
+          if (anonRetried.ok) return anonRetried;
+        }
+      }
+    } catch {
+      // ignore clone error
+    }
   }
+
+  return response;
 };
 
 // Safely initialize Supabase Client with fail-safe fallback and custom fetch

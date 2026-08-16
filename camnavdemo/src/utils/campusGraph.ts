@@ -1,10 +1,13 @@
+import graphData from '../data/unified_graph.json';
+
 export interface CampusGraphNode {
   id: string;
-  name: string;
-  category: 'transit' | 'academic' | 'facility' | 'sports';
-  description: string;
-  coordinates: { x: number; y: number };
-  features: string[];
+  label: string;
+  building_id: string;
+  floor: number;
+  type: string;
+  accessible: boolean;
+  coords: { x: number; y: number };
 }
 
 export interface CampusGraphEdge {
@@ -12,179 +15,367 @@ export interface CampusGraphEdge {
   to: string;
   distance: number;
   type: string;
-  accessible?: boolean;
+  accessible: boolean;
 }
 
-export const CAMPUS_NODES: Record<string, { label: string; coords: { x: number; y: number } }> = {
-  main_entrance: { label: 'Main Entrance', coords: { x: 120, y: 90 } },
-  parking_area: { label: 'Two-Wheeler Parking (ITI17)', coords: { x: 310, y: 70 } },
-  football_ground: { label: 'Football Ground', coords: { x: 335, y: 340 } },
-  cricket_ground: { label: 'Cricket Ground', coords: { x: 200, y: 650 } },
-  iter_cafeteria: { label: 'ITER Cafeteria', coords: { x: 600, y: 540 } },
-  roundabout: { label: 'Central Roundabout', coords: { x: 190, y: 420 } },
-  block_a_entrance: { label: 'Block A — Entrance', coords: { x: 220, y: 195 } },
-  block_b_entrance: { label: 'Block B — Entrance', coords: { x: 235, y: 285 } },
-  block_c_entrance: { label: 'Block C — Entrance', coords: { x: 340, y: 415 } },
-  block_d_entrance: { label: 'Block D — Entrance (Stairs Only)', coords: { x: 190, y: 490 } },
-  block_e_entrance: { label: 'Block E — Main Entrance', coords: { x: 350, y: 575 } },
-  block_f_entrance: { label: 'Block F — Entrance', coords: { x: 510, y: 490 } },
-  ds_block_entrance: { label: 'Data Science Block — Entrance', coords: { x: 430, y: 260 } },
-  auditorium_entrance: { label: 'Auditorium — Main Entrance', coords: { x: 530, y: 320 } },
-  sc_block_entrance: { label: 'SC Block — Entrance', coords: { x: 340, y: 495 } },
-  library_entrance: { label: 'Central Library — Entrance', coords: { x: 200, y: 550 } }
-};
+// Ingest from static JSON cleanly without bloating AST memory
+export const CAMPUS_NODES: Record<string, CampusGraphNode> = {};
+for (const n of graphData.nodes as any[]) {
+  CAMPUS_NODES[n.id] = {
+    id: n.id,
+    label: n.label || n.id,
+    building_id: n.building_id || 'campus',
+    floor: n.floor || 0,
+    type: n.type || 'room',
+    accessible: n.accessible !== false,
+    coords: n.coords || { x: 50, y: 50 }
+  };
+}
 
-export const CAMPUS_EDGES: CampusGraphEdge[] = [
-  { from: 'main_entrance', to: 'parking_area', distance: 10, type: 'pathway', accessible: true },
-  { from: 'main_entrance', to: 'block_a_entrance', distance: 66, type: 'pathway', accessible: true },
-  { from: 'block_a_entrance', to: 'block_b_entrance', distance: 89, type: 'pathway', accessible: true },
-  { from: 'block_b_entrance', to: 'block_c_entrance', distance: 79, type: 'pathway', accessible: true },
-  { from: 'block_b_entrance', to: 'roundabout', distance: 94, type: 'pathway', accessible: true },
-  { from: 'roundabout', to: 'block_d_entrance', distance: 63, type: 'pathway', accessible: false }, // stairs/no ramp
-  { from: 'roundabout', to: 'library_entrance', distance: 54, type: 'pathway', accessible: true },
-  { from: 'block_d_entrance', to: 'library_entrance', distance: 90, type: 'pathway', accessible: false },
-  { from: 'block_c_entrance', to: 'sc_block_entrance', distance: 67, type: 'pathway', accessible: true },
-  { from: 'block_c_entrance', to: 'roundabout', distance: 118, type: 'pathway', accessible: true },
-  { from: 'sc_block_entrance', to: 'block_e_entrance', distance: 113, type: 'pathway', accessible: true },
-  { from: 'sc_block_entrance', to: 'block_f_entrance', distance: 95, type: 'pathway', accessible: true },
-  { from: 'block_e_entrance', to: 'block_f_entrance', distance: 128, type: 'pathway', accessible: true },
-  { from: 'block_c_entrance', to: 'auditorium_entrance', distance: 73, type: 'pathway', accessible: true },
-  { from: 'block_c_entrance', to: 'ds_block_entrance', distance: 77, type: 'pathway', accessible: true },
-  { from: 'block_a_entrance', to: 'ds_block_entrance', distance: 145, type: 'pathway', accessible: true },
-  { from: 'auditorium_entrance', to: 'iter_cafeteria', distance: 240, type: 'pathway', accessible: true },
-  { from: 'block_f_entrance', to: 'iter_cafeteria', distance: 89, type: 'pathway', accessible: true },
-  { from: 'block_b_entrance', to: 'football_ground', distance: 26, type: 'pathway', accessible: true },
-  { from: 'block_e_entrance', to: 'cricket_ground', distance: 46, type: 'pathway', accessible: true }
-];
+export const CAMPUS_EDGES: CampusGraphEdge[] = (graphData.edges as any[]).map(e => ({
+  from: e.from,
+  to: e.to,
+  distance: e.distance,
+  type: e.type || 'corridor',
+  accessible: e.accessible !== false
+}));
 
 export interface CampusNavigationResult {
-  status: 'success';
   start_location: string;
   end_location: string;
+  start_label?: string;
+  end_label?: string;
   profile_used: string;
   total_distance_meters: number;
   estimated_time_minutes: number;
   path_nodes: string[];
   step_by_step_directions: string[];
+  steps?: Array<{
+    stepNumber: number;
+    instruction: string;
+    floorId: number;
+    floorName: string;
+    buildingId: string;
+    distanceMeters: number;
+    nodeId: string;
+    nodeLabel: string;
+    featureTypeUsed: string;
+  }>;
+  involved_floors?: Array<{
+    key: string;
+    buildingId: string;
+    floor: number;
+    floorName: string;
+    floorPlanUrl?: string;
+  }>;
+  accessible_features: string[];
+  voice_guidance: string;
   voice_navigation: string;
+  fromNode: {
+    id: string;
+    name: string;
+    floorId: number;
+    buildingId: string;
+    type: string;
+    isAccessible: boolean;
+    x: number;
+    y: number;
+  };
+  toNode: {
+    id: string;
+    name: string;
+    floorId: number;
+    buildingId: string;
+    type: string;
+    isAccessible: boolean;
+    x: number;
+    y: number;
+  };
+}
+
+function cleanLabel(label: string): string {
+  if (!label) return '';
+  let s = label;
+  if (s.includes('(') && s.includes(')')) {
+    const part = s.split('(')[0].trim();
+    if (part.length >= 2 && !part.toLowerCase().startsWith('block')) {
+      return part;
+    }
+  }
+  s = s.replace(/Block\s+[A-Z]\s+Floor\s+\d+\s*[-—–]\s*/gi, '');
+  s = s.replace(/Block\s+[A-Z]\s*[-—–]\s*/gi, '');
+  s = s.replace(/\s*\((West|East)\)/gi, '');
+  return s.trim();
 }
 
 export function computeCampusRoute(
   startId: string,
   endId: string,
-  userProfile: 'wheelchair' | 'blind' | 'standard' = 'wheelchair'
+  profile: 'wheelchair' | 'blind' | 'standard' = 'wheelchair'
 ): CampusNavigationResult | { error: string } {
-  const adj = new Map<string, Array<{ to: string; distance: number; type: string; accessible: boolean }>>();
+  const normStart = startId.trim();
+  const normEnd = endId.trim();
 
-  // Populate graph
-  Object.keys(CAMPUS_NODES).forEach(nodeId => {
-    adj.set(nodeId, []);
-  });
-
-  CAMPUS_EDGES.forEach(edge => {
-    if (!adj.has(edge.from)) adj.set(edge.from, []);
-    if (!adj.has(edge.to)) adj.set(edge.to, []);
-
-    const isAccessible = edge.accessible ?? (edge.type !== 'stairs');
-
-    adj.get(edge.from)!.push({ to: edge.to, distance: edge.distance, type: edge.type, accessible: isAccessible });
-    adj.get(edge.to)!.push({ to: edge.from, distance: edge.distance, type: edge.type, accessible: isAccessible });
-  });
-
-  if (!adj.has(startId) || !adj.has(endId)) {
-    return { error: `Invalid start ('${startId}') or end ('${endId}') campus location.` };
+  if (!CAMPUS_NODES[normStart] || !CAMPUS_NODES[normEnd]) {
+    return { error: `Invalid start ('${normStart}') or end ('${normEnd}') campus location.` };
   }
 
-  // Priority queue / min-dist map for Dijkstra
-  const distances = new Map<string, number>();
-  const previous = new Map<string, { prevId: string; edgeType: string }>();
-  const unvisited = new Set<string>();
+  // Build Adjacency List
+  const graph: Record<string, Array<{ to: string; distance: number; type: string; accessible: boolean }>> = {};
+  for (const n of Object.keys(CAMPUS_NODES)) {
+    graph[n] = [];
+  }
 
-  adj.forEach((_, key) => {
-    distances.set(key, Infinity);
-    unvisited.add(key);
-  });
-  distances.set(startId, 0);
+  for (const edge of CAMPUS_EDGES) {
+    const { from, to, distance, type } = edge;
+    const isAccessible = edge.accessible !== false;
 
-  while (unvisited.size > 0) {
-    let currentId: string | null = null;
-    let minDist = Infinity;
-
-    unvisited.forEach(nodeId => {
-      const d = distances.get(nodeId) ?? Infinity;
-      if (d < minDist) {
-        minDist = d;
-        currentId = nodeId;
-      }
-    });
-
-    if (!currentId || minDist === Infinity || currentId === endId) {
-      break;
+    if (graph[from]) {
+      graph[from].push({ to, distance, type, accessible: isAccessible });
     }
+    if (graph[to]) {
+      graph[to].push({ to: from, distance, type, accessible: isAccessible });
+    }
+  }
 
-    unvisited.delete(currentId);
+  // Dijkstra's Algorithm
+  const distances: Record<string, number> = {};
+  const previous: Record<string, string | null> = {};
+  const visited = new Set<string>();
 
-    const neighbors = adj.get(currentId) || [];
+  for (const n of Object.keys(CAMPUS_NODES)) {
+    distances[n] = Infinity;
+    previous[n] = null;
+  }
+  distances[normStart] = 0;
+
+  const pq: Array<{ node: string; dist: number }> = [{ node: normStart, dist: 0 }];
+
+  while (pq.length > 0) {
+    pq.sort((a, b) => a.dist - b.dist);
+    const current = pq.shift()!;
+
+    if (visited.has(current.node)) continue;
+    visited.add(current.node);
+
+    if (current.node === normEnd) break;
+
+    const neighbors = graph[current.node] || [];
     for (const neighbor of neighbors) {
-      if (!unvisited.has(neighbor.to)) continue;
-
-      // Wheelchair profile avoids non-accessible edges
-      if (userProfile === 'wheelchair' && (!neighbor.accessible || neighbor.type === 'stairs')) {
+      if (profile === 'wheelchair' && (neighbor.type === 'stairs' || !neighbor.accessible)) {
         continue;
       }
 
-      const alt = minDist + neighbor.distance;
-      if (alt < (distances.get(neighbor.to) ?? Infinity)) {
-        distances.set(neighbor.to, alt);
-        previous.set(neighbor.to, { prevId: currentId, edgeType: neighbor.type });
+      const alt = distances[current.node] + neighbor.distance;
+      if (alt < distances[neighbor.to]) {
+        distances[neighbor.to] = alt;
+        previous[neighbor.to] = current.node;
+        pq.push({ node: neighbor.to, dist: alt });
       }
     }
   }
 
-  if (distances.get(endId) === Infinity) {
-    return { error: `No accessible route found between '${startId}' and '${endId}' for ${userProfile} profile.` };
+  if (distances[normEnd] === Infinity) {
+    return { error: `No accessible route found between '${normStart}' and '${normEnd}' for ${profile} profile.` };
   }
 
   // Reconstruct path
   const path: string[] = [];
-  let curr: string | undefined = endId;
-
-  while (curr) {
+  let curr: string | null = normEnd;
+  while (curr !== null) {
     path.unshift(curr);
-    const prev = previous.get(curr);
-    curr = prev ? prev.prevId : undefined;
+    curr = previous[curr];
   }
 
-  const totalDistance = distances.get(endId) || 0;
-  const estimatedTimeMinutes = Math.max(1, Math.round(totalDistance / 55)); // ~55m per min
+  const totalDist = distances[normEnd];
+  const estMinutes = Math.max(1, Math.round(totalDist / 60));
 
-  // Turn by turn steps
-  const steps: string[] = [];
-  for (let i = 0; i < path.length - 1; i++) {
+  const startNode = CAMPUS_NODES[normStart];
+  const endNode = CAMPUS_NODES[normEnd];
+  const startName = cleanLabel(startNode.label);
+  const endName = cleanLabel(endNode.label);
+
+  const condensedSteps: string[] = [];
+  const involvedFloors: any[] = [];
+
+  let i = 0;
+  while (i < path.length - 1) {
     const currId = path[i];
+    const currInfo = CAMPUS_NODES[currId];
+    const currFloor = currInfo.floor;
+    const currBldg = currInfo.building_id;
+
+    const floorKey = `${currBldg}_f${currFloor}`;
+    if (!involvedFloors.some(f => f.key === floorKey)) {
+      involvedFloors.push({
+        key: floorKey,
+        buildingId: currBldg,
+        floor: currFloor,
+        floorName: currFloor > 0 ? `Floor ${currFloor}` : 'Ground Floor',
+        floorPlanUrl: `/maps/floors/${currBldg}/floor_${currFloor}.png`
+      });
+    }
+
     const nextId = path[i + 1];
-    const currLabel = CAMPUS_NODES[currId]?.label || currId.replace(/_/g, ' ');
-    const nextLabel = CAMPUS_NODES[nextId]?.label || nextId.replace(/_/g, ' ');
-    
+    let edgeType = 'corridor';
+    for (const e of graph[currId] || []) {
+      if (e.to === nextId) {
+        edgeType = e.type;
+        break;
+      }
+    }
+
+    // 1. Elevator collapse
+    if (edgeType === 'elevator' || currId.includes('lift')) {
+      let j = i + 1;
+      while (j < path.length) {
+        let eType = 'corridor';
+        for (const e of graph[path[j - 1]] || []) {
+          if (e.to === path[j]) {
+            eType = e.type;
+            break;
+          }
+        }
+        if (eType === 'elevator' || path[j].includes('lift')) {
+          j++;
+        } else {
+          break;
+        }
+      }
+
+      const destLiftNode = CAMPUS_NODES[path[j - 1]];
+      const destFloor = destLiftNode.floor;
+      const liftName = currId.includes('lift2') ? 'Lift 2' : currId.includes('lift3') ? 'Lift 3' : currId.includes('lift4') ? 'Lift 4' : 'Lift 1';
+      const floorStr = destFloor > 0 ? `Floor ${destFloor}` : 'Ground Floor';
+
+      if (destFloor < currFloor) {
+        condensedSteps.push(`Take ${liftName} down to ${floorStr}.`);
+      } else if (destFloor > currFloor) {
+        condensedSteps.push(`Take ${liftName} up to ${floorStr}.`);
+      } else {
+        condensedSteps.push(`Take ${liftName} to ${floorStr}.`);
+      }
+      i = Math.max(i + 1, j - 1);
+      continue;
+    }
+
+    // 2. Stairs collapse
+    if (edgeType === 'stairs' || currId.includes('stairs')) {
+      let j = i + 1;
+      while (j < path.length) {
+        let eType = 'corridor';
+        for (const e of graph[path[j - 1]] || []) {
+          if (e.to === path[j]) {
+            eType = e.type;
+            break;
+          }
+        }
+        if (eType === 'stairs' || path[j].includes('stairs')) {
+          j++;
+        } else {
+          break;
+        }
+      }
+      const destStNode = CAMPUS_NODES[path[j - 1]];
+      const destFloor = destStNode.floor;
+      const floorStr = destFloor > 0 ? `Floor ${destFloor}` : 'Ground Floor';
+      if (destFloor < currFloor) {
+        condensedSteps.push(`Take the stairs down to ${floorStr}.`);
+      } else {
+        condensedSteps.push(`Take the stairs up to ${floorStr}.`);
+      }
+      i = Math.max(i + 1, j - 1);
+      continue;
+    }
+
+    // 3. Bridge Crossing
+    if (edgeType === 'bridge' || currId.includes('bridge') || currId.includes('passage')) {
+      const targetInfo = CAMPUS_NODES[nextId];
+      const targetBldg = targetInfo.building_id;
+      const bldgName = targetBldg.replace('block_', 'Block ').toUpperCase();
+      if (targetBldg && targetBldg !== currBldg) {
+        condensedSteps.push(`Cross the connecting bridge into ${bldgName}.`);
+      } else {
+        condensedSteps.push(`Proceed across the connecting bridge.`);
+      }
+      i++;
+      continue;
+    }
+
+    // 4. Walking corridors
     if (i === 0) {
-      steps.push(`Start at ${currLabel} and follow the step-free walkway towards ${nextLabel}.`);
+      condensedSteps.push(`From ${startName}, head down the hallway towards ${cleanLabel(CAMPUS_NODES[nextId]?.label || '')}.`);
+    } else if (i === path.length - 2) {
+      condensedSteps.push(`Proceed to ${endName}.`);
     } else {
-      steps.push(`Continue from ${currLabel} to ${nextLabel}.`);
+      const nextLabel = cleanLabel(CAMPUS_NODES[nextId]?.label || '');
+      if (['lift', 'stairs', 'bridge', 'entrance', 'roundabout'].some(k => nextId.includes(k))) {
+        condensedSteps.push(`Head towards ${nextLabel}.`);
+      }
+    }
+    i++;
+  }
+
+  if (!condensedSteps.length || !condensedSteps[condensedSteps.length - 1].includes(endName)) {
+    condensedSteps.push(`Arrive at ${endName}.`);
+  }
+
+  // Deduplicate
+  const deduped: string[] = [];
+  for (const s of condensedSteps) {
+    if (!deduped.length || deduped[deduped.length - 1] !== s) {
+      deduped.push(s);
     }
   }
 
-  const startLabel = CAMPUS_NODES[startId]?.label || startId;
-  const endLabel = CAMPUS_NODES[endId]?.label || endId;
+  const stepsObjs = deduped.map((stepText, idx) => ({
+    stepNumber: idx + 1,
+    instruction: stepText,
+    floorId: startNode.floor,
+    floorName: startNode.floor > 0 ? `Floor ${startNode.floor}` : 'Ground Floor',
+    buildingId: startNode.building_id,
+    distanceMeters: Math.round(totalDist / deduped.length),
+    nodeId: path[Math.min(idx, path.length - 1)],
+    nodeLabel: stepText,
+    featureTypeUsed: stepText.toLowerCase().includes('lift') || stepText.toLowerCase().includes('elevator') ? 'elevator' : stepText.toLowerCase().includes('bridge') ? 'bridge' : stepText.toLowerCase().includes('stairs') ? 'stairs' : 'corridor'
+  }));
+
+  const voiceMsg = `Go from ${startName}. ` + deduped.join(' Then, ') + ` You have arrived at ${endName}. Total distance is ${totalDist} meters.`;
 
   return {
-    status: 'success',
-    start_location: startId,
-    end_location: endId,
-    profile_used: userProfile,
-    total_distance_meters: totalDistance,
-    estimated_time_minutes: estimatedTimeMinutes,
+    start_location: normStart,
+    end_location: normEnd,
+    start_label: startNode.label,
+    end_label: endNode.label,
+    profile_used: profile,
+    total_distance_meters: totalDist,
+    estimated_time_minutes: estMinutes,
     path_nodes: path,
-    step_by_step_directions: steps,
-    voice_navigation: `Navigating from ${startLabel} to ${endLabel} using ${userProfile} accessible route. Total distance is approximately ${totalDistance} meters.`
+    step_by_step_directions: deduped,
+    steps: stepsObjs,
+    involved_floors: involvedFloors,
+    accessible_features: profile === 'wheelchair' ? ['Wheelchair Ramps & Bridges', 'Lifts Active'] : ['Tactile Guides'],
+    voice_guidance: voiceMsg,
+    voice_navigation: voiceMsg,
+    fromNode: {
+      id: normStart,
+      name: startNode.label,
+      floorId: startNode.floor,
+      buildingId: startNode.building_id,
+      type: startNode.type,
+      isAccessible: startNode.accessible,
+      x: startNode.coords.x,
+      y: startNode.coords.y
+    },
+    toNode: {
+      id: normEnd,
+      name: endNode.label,
+      floorId: endNode.floor,
+      buildingId: endNode.building_id,
+      type: endNode.type,
+      isAccessible: endNode.accessible,
+      x: endNode.coords.x,
+      y: endNode.coords.y
+    }
   };
 }

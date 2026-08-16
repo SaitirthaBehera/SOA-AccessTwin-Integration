@@ -24,6 +24,8 @@ import {
   ShieldCheck,
   Radio
 } from 'lucide-react';
+import { LocationCascadeSelector } from './LocationCascadeSelector';
+import { CAMPUS_NODES } from '../utils/campusGraph';
 
 interface AccessibleNavigationProps {
   building?: Building;
@@ -58,7 +60,7 @@ export const AccessibleNavigation: React.FC<AccessibleNavigationProps> = ({
     } catch (err: any) {
       setHealthStatus({
         isOnline: false,
-        url: 'http://localhost:8000',
+        url: 'http://localhost:8001',
         error: err?.message || 'Connection failed'
       });
     } finally {
@@ -111,8 +113,9 @@ export const AccessibleNavigation: React.FC<AccessibleNavigationProps> = ({
 
       const result = await navigationApi.findAccessibleRoute(startNodeId, targetNodeId, profile);
 
-      if (result && result.status === 'success') {
+      if (result && (result.status === 'success' || (result.path_nodes && result.path_nodes.length > 0))) {
         setActiveFastApiRoute(result);
+        setErrorMessage(null);
 
         // Map to RouteResult format for digital twin visualization bridge
         const startLoc = CAMPUS_LOCATIONS.find(l => l.id === result.start_location) || CAMPUS_LOCATIONS[0];
@@ -173,6 +176,9 @@ export const AccessibleNavigation: React.FC<AccessibleNavigationProps> = ({
   };
 
   const getLocationLabel = (id: string): string => {
+    if (CAMPUS_NODES[id]) {
+      return CAMPUS_NODES[id].label;
+    }
     const loc = CAMPUS_LOCATIONS.find(l => l.id === id);
     return loc ? loc.name : id.replace(/_/g, ' ').toUpperCase();
   };
@@ -206,7 +212,7 @@ export const AccessibleNavigation: React.FC<AccessibleNavigationProps> = ({
             <span>
               {healthStatus?.isOnline
                 ? `Navigation Backend Connected (${healthStatus.latencyMs ?? 15}ms)`
-                : 'Navigation Backend Offline (Port 8000)'}
+                : 'Navigation Backend Offline (Port 8001)'}
             </span>
           </div>
 
@@ -234,7 +240,7 @@ export const AccessibleNavigation: React.FC<AccessibleNavigationProps> = ({
               To connect the live Python routing service, launch the backend in a separate terminal:
             </p>
             <code className="inline-block bg-slate-800 text-emerald-400 font-mono text-[11px] px-2.5 py-1 rounded border border-slate-700 mt-1">
-              cd navigation-backend && pip install -r requirements.txt && uvicorn main:app --reload --port 8000
+              cd navigation-backend && python main.py
             </code>
           </div>
           <button
@@ -247,103 +253,35 @@ export const AccessibleNavigation: React.FC<AccessibleNavigationProps> = ({
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Navigation Input Form */}
-        <form onSubmit={handleCalculateRoute} className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-xs space-y-6">
+        <form onSubmit={handleCalculateRoute} className="lg:col-span-5 bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-xs space-y-6">
           <h3 className="text-base font-bold text-slate-900 flex items-center space-x-2">
             <Compass className="w-5 h-5 text-blue-600" />
             <span>Route Parameters</span>
           </h3>
 
-          {/* Start Location */}
-          <div>
-            <label htmlFor="select-start-node" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Starting Location *
-            </label>
-            <select
-              id="select-start-node"
-              value={startNodeId}
-              onChange={(e) => setStartNodeId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <optgroup label="Entrances & Gates">
-                {CAMPUS_LOCATIONS.filter(l => l.category === 'transit').map(loc => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Academic Blocks">
-                {CAMPUS_LOCATIONS.filter(l => l.category === 'academic').map(loc => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Facilities & Library">
-                {CAMPUS_LOCATIONS.filter(l => l.category === 'facility').map(loc => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Sports Complexes">
-                {CAMPUS_LOCATIONS.filter(l => l.category === 'sports').map(loc => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-            {startLocationObj && (
-              <p className="text-[11px] text-slate-500 mt-1">{startLocationObj.description}</p>
-            )}
-          </div>
+          {/* 3-Tier Cascading Start Location (Building -> Floor -> Room) */}
+          <LocationCascadeSelector
+            id="start-location-cascade"
+            label="Starting Location"
+            selectedNodeId={startNodeId}
+            onSelectNode={(id) => {
+              setStartNodeId(id);
+              setErrorMessage(null);
+            }}
+          />
 
-          {/* Destination Location */}
-          <div>
-            <label htmlFor="select-target-node" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Destination Location *
-            </label>
-            <select
-              id="select-target-node"
-              value={targetNodeId}
-              onChange={(e) => setTargetNodeId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <optgroup label="Academic Blocks">
-                {CAMPUS_LOCATIONS.filter(l => l.category === 'academic').map(loc => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Facilities & Library">
-                {CAMPUS_LOCATIONS.filter(l => l.category === 'facility').map(loc => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Sports Complexes">
-                {CAMPUS_LOCATIONS.filter(l => l.category === 'sports').map(loc => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Entrances & Gates">
-                {CAMPUS_LOCATIONS.filter(l => l.category === 'transit').map(loc => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-            {targetLocationObj && (
-              <p className="text-[11px] text-slate-500 mt-1">{targetLocationObj.description}</p>
-            )}
-          </div>
+          {/* 3-Tier Cascading Destination Location (Building -> Floor -> Room) */}
+          <LocationCascadeSelector
+            id="target-location-cascade"
+            label="Destination Location"
+            selectedNodeId={targetNodeId}
+            onSelectNode={(id) => {
+              setTargetNodeId(id);
+              setErrorMessage(null);
+            }}
+          />
 
           {/* Disability Profile Radio Buttons matching FastAPI choices */}
           <div className="space-y-2">
@@ -408,14 +346,17 @@ export const AccessibleNavigation: React.FC<AccessibleNavigationProps> = ({
         </form>
 
         {/* Calculated Route Details & Turn-by-Turn Steps */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-7 space-y-6">
           {errorMessage && (
-            <div className="bg-rose-50 border border-rose-300 p-5 rounded-2xl text-rose-900 text-xs font-medium space-y-1">
-              <div className="flex items-center space-x-2 font-bold text-rose-700">
+            <div className="bg-amber-50 border border-amber-300 p-5 rounded-2xl text-amber-900 text-xs font-medium space-y-1">
+              <div className="flex items-center space-x-2 font-bold text-amber-700">
                 <AlertTriangle className="w-4 h-4" />
-                <span>Navigation Calculation Alert</span>
+                <span>Accessibility Constraint</span>
               </div>
               <p>{errorMessage}</p>
+              <p className="mt-2 text-[11px] text-amber-800">
+                Note: This destination may not have step-free access for your selected accessibility profile. Please try choosing a different entrance or profile.
+              </p>
             </div>
           )}
 
@@ -481,43 +422,80 @@ export const AccessibleNavigation: React.FC<AccessibleNavigationProps> = ({
                 </div>
               </div>
 
-              {/* Voice Navigation Section */}
-              {activeFastApiRoute.voice_navigation && (
-                <div className="bg-purple-50/80 border border-purple-200 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center space-x-2 text-xs font-bold text-purple-900">
-                      <Volume2 className="w-4 h-4 text-purple-700" />
-                      <span>Audio Voice Wayfinding</span>
-                    </div>
-                    <p className="text-xs text-purple-950 font-medium italic leading-relaxed">
-                      &quot;{activeFastApiRoute.voice_navigation}&quot;
-                    </p>
-                  </div>
+              {/* Turn-by-Turn Voice Navigation Section */}
+              {(() => {
+                let voiceText = activeFastApiRoute.voice_guidance || activeFastApiRoute.voice_navigation;
+                
+                // If it contains robotic "Step 1: Proceed from...", condense into minimal human phrasing
+                if (!voiceText || voiceText.includes('Step 1: Proceed from') || voiceText.length > 250) {
+                  const startClean = getLocationLabel(activeFastApiRoute.start_location).replace(/\(.*?\)/g, '').replace(/Block\s+[A-Z]\s*[-—–]\s*/gi, '').trim();
+                  const endClean = getLocationLabel(activeFastApiRoute.end_location).replace(/\(.*?\)/g, '').replace(/Block\s+[A-Z]\s*[-—–]\s*/gi, '').trim();
 
-                  <button
-                    id="btn-speak-voice-navigation"
-                    type="button"
-                    onClick={() => handleSpeakVoice(activeFastApiRoute.voice_navigation)}
-                    className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center space-x-2 cursor-pointer transition-all shrink-0 ${
-                      isSpeaking
-                        ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-md'
-                        : 'bg-purple-600 hover:bg-purple-700 text-white shadow-sm'
-                    }`}
-                  >
-                    {isSpeaking ? (
-                      <>
-                        <VolumeX className="w-4 h-4" />
-                        <span>Stop Voice</span>
-                      </>
-                    ) : (
-                      <>
-                        <Volume2 className="w-4 h-4" />
-                        <span>Listen Voice</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
+                  const conciseSteps: string[] = [];
+                  const rawList = activeFastApiRoute.step_by_step_directions || [];
+                  
+                  for (const s of rawList) {
+                    const lower = s.toLowerCase();
+                    if (lower.includes('elevator') || lower.includes('lift')) {
+                      const matchFloor = s.match(/floor\s+(\d+)/i);
+                      const targetFl = matchFloor ? `Floor ${matchFloor[1]}` : (lower.includes('ground') ? 'Ground Floor' : 'your target floor');
+                      const liftStr = `Take the elevator to ${targetFl}.`;
+                      if (!conciseSteps.includes(liftStr)) conciseSteps.push(liftStr);
+                    } else if (lower.includes('bridge') || lower.includes('passage')) {
+                      const matchB = s.match(/block\s+([a-e])/i);
+                      const bName = matchB ? `Block ${matchB[1].toUpperCase()}` : 'the connecting building';
+                      const bridgeStr = `Cross the bridge to ${bName}.`;
+                      if (!conciseSteps.includes(bridgeStr)) conciseSteps.push(bridgeStr);
+                    } else if (lower.includes('stairs')) {
+                      const stairsStr = `Take the stairs.`;
+                      if (!conciseSteps.includes(stairsStr)) conciseSteps.push(stairsStr);
+                    }
+                  }
+
+                  if (conciseSteps.length > 0) {
+                    voiceText = `Start from ${startClean}. ` + conciseSteps.join(' Then, ') + ` Walk down the corridor to ${endClean}. You have arrived at your destination.`;
+                  } else {
+                    voiceText = `Head from ${startClean} along the main hallway directly to ${endClean}. Total distance: ${activeFastApiRoute.total_distance_meters} meters.`;
+                  }
+                }
+
+                return (
+                  <div className="bg-purple-50 border border-purple-200 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2 text-xs font-bold text-purple-900">
+                        <Volume2 className="w-4 h-4 text-purple-700" />
+                        <span>Minimal Audio Voice Wayfinding (Human Guidance)</span>
+                      </div>
+                      <p className="text-xs text-purple-950 font-medium italic leading-relaxed">
+                        &quot;{voiceText}&quot;
+                      </p>
+                    </div>
+
+                    <button
+                      id="btn-speak-voice-navigation"
+                      type="button"
+                      onClick={() => handleSpeakVoice(voiceText!)}
+                      className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center space-x-2 cursor-pointer transition-all shrink-0 ${
+                        isSpeaking
+                          ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-md'
+                          : 'bg-purple-600 hover:bg-purple-700 text-white shadow-sm'
+                      }`}
+                    >
+                      {isSpeaking ? (
+                        <>
+                          <VolumeX className="w-4 h-4" />
+                          <span>Stop Voice</span>
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 className="w-4 h-4" />
+                          <span>Listen Voice 🔊</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                );
+              })()}
 
               {/* Route Node Sequence Badge Strip */}
               <div className="space-y-2 pt-1">
@@ -542,26 +520,84 @@ export const AccessibleNavigation: React.FC<AccessibleNavigationProps> = ({
                 </div>
               </div>
 
+              {/* Multi-Floor Architecture Map Previews (if route spans multiple floors/blocks) */}
+              {activeFastApiRoute.involved_floors && activeFastApiRoute.involved_floors.length > 0 && (
+                <div className="space-y-4 pt-2 border-t border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-1.5">
+                      <span>🗺️ Multi-Floor Architectural Blueprints ({activeFastApiRoute.involved_floors.length} Floors Traversed)</span>
+                    </h4>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {activeFastApiRoute.involved_floors.map((fl) => (
+                      <div key={fl.key} className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 p-3 space-y-2 shadow-sm">
+                        <div className="flex items-center justify-between px-1 text-xs text-white font-bold">
+                          <span>{fl.buildingId.replace('_', ' ').toUpperCase()} — {fl.floorName}</span>
+                          <span className="text-[10px] bg-blue-600/80 px-2 py-0.5 rounded text-blue-100 font-mono">Wayfinding Active</span>
+                        </div>
+                        <div className="h-44 bg-slate-950 rounded-xl overflow-hidden flex items-center justify-center border border-slate-800">
+                          <img 
+                            src={fl.floorPlanUrl || `/maps/floors/${fl.buildingId}/floor_${fl.floor}.png`} 
+                            alt={`${fl.buildingId} ${fl.floorName}`}
+                            className="w-full h-full object-contain hover:scale-105 transition-transform duration-300"
+                            onError={(e) => {
+                              // fallback to frontend public path
+                              (e.target as HTMLImageElement).src = `/maps/floors/${fl.buildingId}/floor_${fl.floor}.png`;
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Turn-by-turn Step-by-Step Instructions Breakdown */}
               <div className="space-y-3 pt-2">
                 <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                   Step-by-Step Turn Directions ({activeFastApiRoute.step_by_step_directions.length})
                 </h4>
                 <div className="space-y-3 relative before:absolute before:top-3 before:bottom-3 before:left-4 before:w-0.5 before:bg-slate-200">
-                  {activeFastApiRoute.step_by_step_directions.map((instruction, idx) => (
-                    <div key={idx} className="relative pl-9 flex items-start space-x-3 text-xs">
-                      <div className="absolute left-1.5 top-0.5 w-6 h-6 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-[10px] shadow-sm">
-                        {idx + 1}
-                      </div>
+                  {(activeFastApiRoute.steps || activeFastApiRoute.step_by_step_directions.map((inst, i) => ({
+                    stepNumber: i + 1,
+                    instruction: inst,
+                    featureTypeUsed: inst.toLowerCase().includes('elevator') ? 'elevator' : inst.toLowerCase().includes('bridge') ? 'bridge' : inst.toLowerCase().includes('ramp') ? 'ramp' : 'corridor',
+                    floorName: 'Waypoint'
+                  }))).map((step: any, idx: number) => {
+                    const feat = step.featureTypeUsed || 'corridor';
+                    const icon = feat === 'elevator' ? '🛗' : feat === 'bridge' ? '🌉' : feat === 'stairs' ? '🪜' : feat === 'ramp' ? '♿' : '🚶';
+                    const isElevatorOrBridge = feat === 'elevator' || feat === 'bridge';
 
-                      <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex-1 space-y-1">
-                        <div className="font-bold text-slate-900 leading-relaxed">{instruction}</div>
-                        <div className="text-[11px] text-slate-500 font-mono">
-                          Waypoint {idx + 1} of {activeFastApiRoute.step_by_step_directions.length}
+                    return (
+                      <div key={idx} className="relative pl-9 flex items-start space-x-3 text-xs">
+                        <div className={`absolute left-1.5 top-0.5 w-6 h-6 rounded-full font-bold flex items-center justify-center text-[11px] shadow-sm ${
+                          isElevatorOrBridge ? 'bg-purple-600 text-white ring-2 ring-purple-300' : 'bg-blue-600 text-white'
+                        }`}>
+                          {idx + 1}
+                        </div>
+
+                        <div className={`p-3.5 rounded-xl border flex-1 space-y-1 ${
+                          isElevatorOrBridge ? 'bg-purple-50/70 border-purple-200' : 'bg-slate-50 border-slate-200'
+                        }`}>
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-900 leading-relaxed flex items-center space-x-1.5">
+                              <span>{icon}</span>
+                              <span>{step.instruction}</span>
+                            </span>
+                            {step.floorName && step.floorName !== 'Waypoint' && (
+                              <span className="text-[10px] font-bold bg-slate-200 text-slate-700 px-2 py-0.5 rounded shrink-0">
+                                {step.floorName}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-mono">
+                            Waypoint {idx + 1} of {activeFastApiRoute.step_by_step_directions.length}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>

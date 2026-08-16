@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { AccessibilityReport, Building, Recommendation } from '../types';
-import { api } from '../services/api';
+import { api, isRealUserUploadedImage } from '../services/api';
 import { AdminLogin } from './AdminLogin';
 import { SmartRecommendations } from './SmartRecommendations';
+import { FloorMapIngestion } from './FloorMapIngestion';
 import { 
   ShieldAlert, 
   CheckCircle2, 
@@ -45,12 +46,12 @@ interface AdminDashboardProps {
   recommendations: Recommendation[];
   onReportVerified: (reportId: string, status: 'admin_verified' | 'rejected', notes?: string) => void;
   onReportResolved?: (reportId: string) => void;
-  onRecommendationStatusUpdated?: (recId: string, newStatus: 'Pending' | 'In Progress' | 'Completed') => void;
+  onRecommendationStatusUpdated?: (recId: string, newStatus: 'Pending' | 'In Progress' | 'Completed', reportId?: string) => void;
   isAdminLoggedIn: boolean;
   onLoginAdmin: () => void;
   onLogoutAdmin: () => void;
   onCancelLogin?: () => void;
-  defaultSubTab?: 'audit-queue' | 'fix-suggestions';
+  defaultSubTab?: 'audit-queue' | 'fix-suggestions' | 'map-ingestion';
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -66,7 +67,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onCancelLogin,
   defaultSubTab = 'audit-queue'
 }) => {
-  const [adminSubTab, setAdminSubTab] = useState<'audit-queue' | 'fix-suggestions'>(defaultSubTab);
+  const [adminSubTab, setAdminSubTab] = useState<'audit-queue' | 'fix-suggestions' | 'map-ingestion'>(defaultSubTab);
   const [selectedBlockId, setSelectedBlockId] = useState<string>('all');
   const [filterState, setFilterState] = useState<string>('active');
   const [adminNotes, setAdminNotes] = useState<{ [id: string]: string }>({});
@@ -226,7 +227,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* Sub-Tab Navigation inside Admin Panel */}
-      <div className="flex bg-slate-200/80 p-1.5 rounded-2xl max-w-lg space-x-1 text-xs font-bold">
+      <div className="flex bg-slate-200/80 p-1.5 rounded-2xl max-w-2xl space-x-1 text-xs font-bold">
         <button
           id="btn-admin-subtab-audit"
           onClick={() => setAdminSubTab('audit-queue')}
@@ -252,9 +253,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <Lightbulb className="w-4 h-4 text-amber-500" />
           <span>Fix Suggestions (Admin Only)</span>
         </button>
+
+        <button
+          id="btn-admin-subtab-maps"
+          onClick={() => setAdminSubTab('map-ingestion')}
+          className={`flex-1 py-2.5 px-4 rounded-xl transition-all flex items-center justify-center space-x-2 cursor-pointer ${
+            adminSubTab === 'map-ingestion'
+              ? 'bg-white text-purple-700 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Layers className="w-4 h-4 text-purple-600" />
+          <span>AI Map Ingestion (Supabase)</span>
+        </button>
       </div>
 
-      {adminSubTab === 'fix-suggestions' ? (
+      {adminSubTab === 'map-ingestion' ? (
+        <FloorMapIngestion />
+      ) : adminSubTab === 'fix-suggestions' ? (
         <SmartRecommendations
           recommendations={recommendations}
           onStatusUpdated={onRecommendationStatusUpdated || (() => {})}
@@ -607,7 +623,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             )}
                           </div>
 
-                          {rep.photoUrl && (
+                          {isRealUserUploadedImage(rep.photoUrl) && (
                             <div className="rounded-xl overflow-hidden border border-slate-200 max-h-32 bg-slate-100 relative group">
                               <img src={rep.photoUrl} alt="Report proof" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                               <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded font-mono">Photo Proof</span>
@@ -628,15 +644,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </span>
                           ) : isVerified ? (
                             <div className="flex items-center space-x-2">
-                              <button
-                                type="button"
-                                id={`btn-resolve-report-${rep.id}`}
-                                onClick={() => handleResolve(rep.id)}
-                                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg transition-colors flex items-center space-x-1 cursor-pointer shadow-xs"
-                              >
-                                <CheckCircle2 className="w-4 h-4" />
-                                <span>Resolve</span>
-                              </button>
+                              {!isRealUserUploadedImage(rep.photoUrl) ? (
+                                <button
+                                  type="button"
+                                  id={`btn-resolve-report-${rep.id}`}
+                                  onClick={() => handleResolve(rep.id)}
+                                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg transition-colors flex items-center space-x-1 cursor-pointer shadow-xs"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  <span>Resolve</span>
+                                </button>
+                              ) : (
+                                <span id={`status-fix-suggestion-${rep.id}`} className="text-xs font-semibold text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 flex items-center space-x-1.5">
+                                  <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
+                                  <span>Managed in Fix Suggestions</span>
+                                </span>
+                              )}
                             </div>
                           ) : (
                             /* isUnverified / Pending */

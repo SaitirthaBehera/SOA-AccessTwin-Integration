@@ -28,13 +28,21 @@ export const BuildingScoreCard: React.FC<BuildingScoreCardProps> = ({
   isAdminLoggedIn = false
 }) => {
   const categories = [
-    { key: 'wheelchair', label: 'Wheelchair Ramp & Elevator Access', score: building.scores.wheelchair, desc: 'Step-free access, 1:12 ramps, wide door frames >= 90cm' },
-    { key: 'visual', label: 'Visual Impairment & Tactile Guidance', score: building.scores.visual, desc: 'Tactile ground indicator tiles, audio elevator beacons, high contrast walls' },
-    { key: 'hearing', label: 'Hearing Impairment & Visual Alarms', score: building.scores.hearing, desc: 'Visible alarm strobes, illuminated floor indicators, digital notice displays' },
-    { key: 'signage', label: 'Tactile & Braille Door Signage', score: building.scores.signage, desc: 'Eye-level Braille plates (140cm height), Grade-2 tactile embossing' },
-    { key: 'restrooms', label: 'Accessible Restrooms & Grab Bars', score: building.scores.restrooms, desc: '1.5m turning radius, emergency pull cord, support rails' },
-    { key: 'navigation', label: 'Indoor Digital Twin Graph Readiness', score: building.scores.navigation, desc: 'Node graph connectivity, pathfinding accuracy, low hazard weight' },
+    { key: 'wheelchair', label: 'Wheelchair Ramp & Elevator Access', score: building.scores?.wheelchair || 0, desc: 'Step-free access, 1:12 ramps, wide door frames >= 90cm' },
+    { key: 'visual', label: 'Visual Impairment & Tactile Guidance', score: building.scores?.visual || 0, desc: 'Tactile ground indicator tiles, audio elevator beacons, high contrast walls' },
+    { key: 'hearing', label: 'Hearing Impairment & Visual Alarms', score: building.scores?.hearing || 0, desc: 'Visible alarm strobes, illuminated floor indicators, digital notice displays' },
+    { key: 'signage', label: 'Tactile & Braille Door Signage', score: building.scores?.signage || 0, desc: 'Eye-level Braille plates (140cm height), Grade-2 tactile embossing' },
+    { key: 'restrooms', label: 'Accessible Restrooms & Grab Bars', score: building.scores?.restrooms || 0, desc: '1.5m turning radius, emergency pull cord, support rails' },
+    { key: 'navigation', label: 'Indoor Digital Twin Graph Readiness', score: building.scores?.navigation || 0, desc: 'Node graph connectivity, pathfinding accuracy, low hazard weight' },
   ];
+
+  if (building.overallScore === undefined || !building.scores) {
+    return (
+      <div id="section-building-score" className="p-8 bg-slate-50 rounded-2xl border border-slate-200 text-center">
+        <p className="text-slate-500 font-medium">No building score data available</p>
+      </div>
+    );
+  }
 
   return (
     <div id="section-building-score" className="space-y-10">
@@ -141,12 +149,12 @@ export const BuildingScoreCard: React.FC<BuildingScoreCardProps> = ({
                   <td className="py-3.5 px-4 text-slate-500">{b.campus}</td>
                   <td className="py-3.5 px-4">
                     <span className="bg-blue-100 text-blue-800 px-2.5 py-1 rounded-full font-black text-xs">
-                      {b.overallScore}/100
+                      {b.overallScore ?? 'N/A'}/100
                     </span>
                   </td>
-                  <td className="py-3.5 px-4 font-bold text-slate-700">{b.scores.wheelchair}%</td>
-                  <td className="py-3.5 px-4 font-bold text-slate-700">{b.scores.visual}%</td>
-                  <td className="py-3.5 px-4 font-bold text-slate-700">{b.scores.restrooms}%</td>
+                  <td className="py-3.5 px-4 font-bold text-slate-700">{b.scores?.wheelchair ?? 0}%</td>
+                  <td className="py-3.5 px-4 font-bold text-slate-700">{b.scores?.visual ?? 0}%</td>
+                  <td className="py-3.5 px-4 font-bold text-slate-700">{b.scores?.restrooms ?? 0}%</td>
                   <td className="py-3.5 px-4">
                     <button
                       id={`btn-score-switch-${b.id}`}

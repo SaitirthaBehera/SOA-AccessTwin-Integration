@@ -8,7 +8,6 @@ export const MOCK_BUILDINGS: Building[] = [
     campus: 'Main Campus (Khandagiri, Bhubaneswar)',
     address: 'Jagamara, Khandagiri, Bhubaneswar, Odisha 751030',
     floorsCount: 4,
-    overallScore: 82,
     imageUrl: 'https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&q=80&w=800',
     description: 'Primary engineering & technology building housing Computer Science, Electronics labs, smart lecture halls, and administrative offices.',
     floors: [
@@ -61,14 +60,6 @@ export const MOCK_BUILDINGS: Building[] = [
         ],
       },
     ],
-    scores: {
-      wheelchair: 85,
-      visual: 78,
-      hearing: 88,
-      signage: 76,
-      restrooms: 84,
-      navigation: 81,
-    },
   },
   {
     id: 'bldg-sum-hospital',
@@ -77,7 +68,6 @@ export const MOCK_BUILDINGS: Building[] = [
     campus: 'SUM Hospital Campus (Kalinga Nagar, Bhubaneswar)',
     address: 'K8 Kalinga Nagar, Ghatikia, Bhubaneswar, Odisha 751003',
     floorsCount: 3,
-    overallScore: 88,
     imageUrl: 'https://images.unsplash.com/photo-1586773860418-d37222d8fce3?auto=format&fit=crop&q=80&w=800',
     description: 'Multi-specialty super hospital with 24/7 casualty, wheelchair access ramps, tactile paths, automatic sliding doors, and voice-guided lifts.',
     floors: [
@@ -115,14 +105,6 @@ export const MOCK_BUILDINGS: Building[] = [
         ],
       },
     ],
-    scores: {
-      wheelchair: 94,
-      visual: 86,
-      hearing: 84,
-      signage: 90,
-      restrooms: 92,
-      navigation: 88,
-    },
   },
   {
     id: 'bldg-library',
@@ -131,7 +113,6 @@ export const MOCK_BUILDINGS: Building[] = [
     campus: 'Main Campus (Bhubaneswar)',
     address: 'Khandagiri, Bhubaneswar, Odisha 751030',
     floorsCount: 3,
-    overallScore: 74,
     imageUrl: 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&q=80&w=800',
     description: 'Central campus repository with digital learning resource centers, braille reading section, quiet study halls, and student lounge.',
     floors: [
@@ -165,14 +146,6 @@ export const MOCK_BUILDINGS: Building[] = [
         ],
       },
     ],
-    scores: {
-      wheelchair: 72,
-      visual: 82,
-      hearing: 70,
-      signage: 68,
-      restrooms: 75,
-      navigation: 76,
-    },
   },
   {
     id: 'bldg-admin-block',
@@ -181,7 +154,6 @@ export const MOCK_BUILDINGS: Building[] = [
     campus: 'Main Campus (Khandagiri, Bhubaneswar)',
     address: 'Khandagiri, Bhubaneswar, Odisha 751030',
     floorsCount: 2,
-    overallScore: 79,
     imageUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=800',
     description: 'Central administrative offices housing Vice Chancellor secretariat, admissions cell, accounts, examination section, and student grievance cell.',
     floors: [
@@ -205,14 +177,6 @@ export const MOCK_BUILDINGS: Building[] = [
         ],
       },
     ],
-    scores: {
-      wheelchair: 78,
-      visual: 75,
-      hearing: 80,
-      signage: 72,
-      restrooms: 82,
-      navigation: 80,
-    },
   },
 ];
 
@@ -388,84 +352,7 @@ export const MOCK_FEATURES: AccessibilityFeature[] = [
 
 export const MOCK_REPORTS: AccessibilityReport[] = [];
 
-export const MOCK_RECOMMENDATIONS: Recommendation[] = [
-  {
-    id: 'rec-001',
-    buildingId: 'bldg-iter-main',
-    buildingName: 'SOA ITER Academic Block A',
-    title: 'Install Modular Metallic Ramp at Lecture Hall 205',
-    problem: '3 step barrier at entrance prevents wheelchair users from accessing CS lectures independently.',
-    solution: 'Install a modular aluminum threshold ramp with non-skid surface and edge protection rails.',
-    severity: 'Critical',
-    disabilityTypesAffected: ['wheelchair', 'elderly'],
-    estimatedUsersAffected: 140,
-    costCategory: 'Low',
-    estimatedCostAmount: '₹12,000 - ₹18,000',
-    expectedImpact: 'High',
-    priority: 'Critical',
-    impactScore: 92,
-    status: 'Pending',
-    floorId: 1,
-    locationName: 'Lecture Hall 205 Entrance',
-  },
-  {
-    id: 'rec-002',
-    buildingId: 'bldg-iter-main',
-    buildingName: 'SOA ITER Academic Block A',
-    title: 'Fix Intermittent Call Button Panel on Floor 2 Elevator',
-    problem: 'Touch panel sensor failure leaves mobility impaired students waiting up to 15 minutes.',
-    solution: 'Replace elevator floor 2 call button PCB module and re-calibrate tactile response.',
-    severity: 'High',
-    disabilityTypesAffected: ['wheelchair', 'elderly', 'visual'],
-    estimatedUsersAffected: 210,
-    costCategory: 'Very Low',
-    estimatedCostAmount: '₹3,500 - ₹5,000',
-    expectedImpact: 'High',
-    priority: 'High',
-    impactScore: 88,
-    status: 'In Progress',
-    floorId: 2,
-    locationName: 'Elevator Bay Floor 2',
-  },
-  {
-    id: 'rec-003',
-    buildingId: 'bldg-iter-main',
-    buildingName: 'SOA ITER Academic Block A',
-    title: 'Add Grade-2 Braille & Tactile Room Number Signs',
-    problem: 'Classrooms and lab doors on Floor 1 & 2 lack tactile numbering for visually impaired visitors.',
-    solution: 'Mount photopolymer tactile + Braille door identification plates at standard 140cm height.',
-    severity: 'Medium',
-    disabilityTypesAffected: ['visual'],
-    estimatedUsersAffected: 65,
-    costCategory: 'Very Low',
-    estimatedCostAmount: '₹4,000 - ₹6,000',
-    expectedImpact: 'Medium',
-    priority: 'Medium',
-    impactScore: 74,
-    status: 'Pending',
-    floorId: 1,
-    locationName: 'Floor 1 & 2 Corridors',
-  },
-  {
-    id: 'rec-004',
-    buildingId: 'bldg-library',
-    buildingName: 'SOA Central Library',
-    title: 'Install Lowered Counter at Library Circulation Desk',
-    problem: 'Main issue counter height is 115cm, making book checkout difficult for seated wheelchair users.',
-    solution: 'Lower a 1-meter section of the reception desk to 80cm height with knee clearance space underneath.',
-    severity: 'Medium',
-    disabilityTypesAffected: ['wheelchair', 'elderly'],
-    estimatedUsersAffected: 45,
-    costCategory: 'Low',
-    estimatedCostAmount: '₹8,000 - ₹12,000',
-    expectedImpact: 'High',
-    priority: 'High',
-    impactScore: 81,
-    status: 'Pending',
-    floorId: 0,
-    locationName: 'Ground Floor Circulation Desk',
-  },
-];
+export const MOCK_RECOMMENDATIONS: Recommendation[] = [];
 
 export const MOCK_NODES: NavigationNode[] = [
   { id: 'node-entrance', buildingId: 'bldg-iter-main', floorId: 0, name: 'Main Entrance Gate 1', x: 10, y: 40, type: 'entrance', isAccessible: true, featureId: 'feat-001' },
@@ -505,70 +392,4 @@ export const MOCK_EDGES: NavigationEdge[] = [
   // Floor 2 paths
   { fromNodeId: 'node-lift-2', toNodeId: 'node-lab-301', distanceMeters: 22, hasRamp: false, hasStairs: false, hasLift: false, minWidthMeters: 1.8, tactilePavingAvailable: false, isWorking: true },
   { fromNodeId: 'node-lift-2', toNodeId: 'node-seminar-305', distanceMeters: 19, hasRamp: false, hasStairs: false, hasLift: false, minWidthMeters: 1.8, tactilePavingAvailable: false, isWorking: true },
-];
-
-export const MOCK_AI_DETECTION_SAMPLES: AiDetectionResult[] = [
-  {
-    imageId: 'img-sample-1',
-    imageUrl: 'https://images.unsplash.com/photo-1584467735871-8e85353a8413?auto=format&fit=crop&q=80&w=800',
-    analyzedAt: '2026-08-11T22:10:00Z',
-    overallAccessibility: 'High',
-    summary: 'Detected 1 Compliant Ramp (Gradient ~1:12), 1 Continuous Handrail, 1 Tactile Warning Strip. Clear wheelchair access path detected.',
-    detectedObjects: [
-      {
-        id: 'det-1',
-        label: 'Accessible Ramp',
-        type: 'ramp',
-        confidence: 94,
-        bbox: [15, 30, 85, 90],
-        status: 'working',
-        recommendation: 'Compliant slope gradient detected with handrails.'
-      },
-      {
-        id: 'det-2',
-        label: 'Continuous Handrail',
-        type: 'ramp',
-        confidence: 91,
-        bbox: [10, 25, 30, 80],
-        status: 'working',
-        recommendation: 'Dual height handrail confirmed.'
-      },
-      {
-        id: 'det-3',
-        label: 'Tactile Ground Indicator',
-        type: 'tactile_path',
-        confidence: 88,
-        bbox: [35, 80, 75, 98],
-        status: 'working',
-        recommendation: 'Warning truncation tiles detected at entrance threshold.'
-      }
-    ]
-  },
-  {
-    imageId: 'img-sample-2',
-    imageUrl: 'https://images.unsplash.com/photo-1596238690940-0222f87c5364?auto=format&fit=crop&q=80&w=800',
-    analyzedAt: '2026-08-11T20:15:00Z',
-    overallAccessibility: 'Poor',
-    summary: 'Detected 1 Entrance Staircase barrier (3 riser steps). No permanent or temporary ramp present. High barrier severity for wheelchair profiles.',
-    detectedObjects: [
-      {
-        id: 'det-4',
-        label: 'Un-ramped Entrance Steps',
-        type: 'stairs',
-        confidence: 96,
-        bbox: [20, 40, 80, 85],
-        status: 'broken',
-        recommendation: 'Requires modular ramp or threshold bridge.'
-      },
-      {
-        id: 'det-5',
-        label: 'Narrow Doorway',
-        type: 'door',
-        confidence: 85,
-        bbox: [35, 10, 65, 45],
-        status: 'working',
-        recommendation: 'Clear opening width ~80cm.'
-      }
-    ]
-  }
 ];

@@ -7,11 +7,12 @@ from fastapi.staticfiles import StaticFiles
 from routes.detect import router as detect_router
 from routes.navigate import router as navigate_router
 from routes.recommendations import router as recommendations_router
+from routes.admin_maps import router as admin_maps_router
 
 app = FastAPI(
     title="S37 Accessibility Digital Twin API",
     description="Backend AI Vision, Dijkstra Accessible Navigation, and Low-Cost Recommendation Engine for ITER Campus.",
-    version="1.0.0"
+    version="2.3.0"
 )
 
 app.add_middleware(
@@ -31,6 +32,7 @@ if os.path.exists(static_dir):
 app.include_router(detect_router, prefix="/api", tags=["CV Detection"])
 app.include_router(navigate_router, prefix="/api", tags=["Navigation"])
 app.include_router(recommendations_router, prefix="/api", tags=["Recommendations"])
+app.include_router(admin_maps_router, prefix="/api", tags=["Admin Maps Ingestion"])
 
 @app.get("/")
 def root():

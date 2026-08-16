@@ -58,6 +58,7 @@ def _process_image_path(image_path: str) -> Dict[str, Any]:
         "imageUrl": "",
         "analyzedAt": datetime.now().isoformat(),
         "detectedObjects": detected_features,
+        "results": detected_features,
         "overallAccessibility": overall_rating,
         "summary": voice_msg,
         "accessibility_score": acc_score,
@@ -66,6 +67,7 @@ def _process_image_path(image_path: str) -> Dict[str, Any]:
     }
 
 @router.post("/detect")
+@router.post("/api/detect")
 async def detect_features(request: Request):
     """Universal handler: smoothly accepts Base64 JSON from React AND File Uploads from Swagger."""
     temp_file_path = os.path.join(TEMP_DIR, f"scan_{uuid.uuid4().hex}.jpg")

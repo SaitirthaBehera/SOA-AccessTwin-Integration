@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Building, AccessibilityFeature, AccessibilityReport, Recommendation, RouteResult } from './types';
 import { api } from './services/api';
-import { MOCK_BUILDINGS, MOCK_FEATURES, MOCK_REPORTS, MOCK_RECOMMENDATIONS } from './data/mockData';
 import { supabase, isSupabaseConfigured, signOutAdminFromSupabase, checkIsAdminUser } from './lib/supabase';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -16,11 +15,11 @@ import { HowItWorksModal } from './components/HowItWorksModal';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [buildings, setBuildings] = useState<Building[]>(MOCK_BUILDINGS);
-  const [selectedBuilding, setSelectedBuilding] = useState<Building>(MOCK_BUILDINGS[0]);
-  const [features, setFeatures] = useState<AccessibilityFeature[]>(MOCK_FEATURES);
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
+  const [features, setFeatures] = useState<AccessibilityFeature[]>([]);
   const [reports, setReports] = useState<AccessibilityReport[]>([]);
-  const [recommendations, setRecommendations] = useState<Recommendation[]>(MOCK_RECOMMENDATIONS);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [activeRoute, setActiveRoute] = useState<RouteResult | null>(null);
 
   const [prefilledLocation, setPrefilledLocation] = useState<{ buildingId: string; floorId: number; x: number; y: number } | null>(null);
@@ -82,9 +81,7 @@ export default function App() {
         setBuildings(bList);
         setSelectedBuilding(bList[0]);
       }
-      const fList = await api.getFeatures(bList[0]?.id || 'bldg-iter-main');
-      if (fList) setFeatures(fList);
-
+      
       const rList = await api.getReports();
       if (rList) setReports(rList);
 
@@ -94,14 +91,28 @@ export default function App() {
     loadInitialData();
   }, []);
 
-  // Update features whenever selected building changes
+  // Update floors and features whenever selected building changes
   useEffect(() => {
-    async function updateFeatures() {
-      const fList = await api.getFeatures(selectedBuilding.id);
-      if (fList) setFeatures(fList);
+    async function updateBuildingData() {
+      if (!selectedBuilding) return;
+      
+      const fList = await api.getFloorsForBuilding(selectedBuilding.id);
+      
+      // Fetch rooms for each floor
+      const floorsWithRooms = await Promise.all(
+        fList.map(async (f) => {
+          const rooms = await api.getRoomsForFloor(f.floorId, selectedBuilding.id);
+          return { ...f, rooms };
+        })
+      );
+      
+      setSelectedBuilding(prev => ({ ...prev, floors: floorsWithRooms }));
+
+      const featuresList = await api.getFeatures(selectedBuilding.id);
+      if (featuresList) setFeatures(featuresList);
     }
-    updateFeatures();
-  }, [selectedBuilding]);
+    updateBuildingData();
+  }, [selectedBuilding?.id]);
 
   const handleReportIssueAtLocation = (bId: string, floorId: number, x: number, y: number) => {
     setPrefilledLocation({ buildingId: bId, floorId, x, y });
@@ -120,7 +131,7 @@ export default function App() {
     });
   };
 
-  const handleReportVerified = (reportId: string, status: 'admin_verified' | 'rejected', notes?: string) => {
+  const handleReportVerified = async (reportId: string, status: 'admin_verified' | 'rejected', notes?: string) => {
     const isVerified = status === 'admin_verified';
     setReports(prev => prev.map(r => {
       if (r.id === reportId) {
@@ -138,7 +149,7 @@ export default function App() {
       return r;
     }));
 
-    // If verified as accessible or barrier, update matching feature confidence
+    // If verified as accessible or barrier, update matching feature confidence and refresh recommendations
     const rep = reports.find(r => r.id === reportId);
     if (rep && status === 'admin_verified') {
       setFeatures(prev => prev.map(f => {
@@ -152,6 +163,16 @@ export default function App() {
         }
         return f;
       }));
+
+      // Refresh fix recommendations state so newly analyzed suggestion appears immediately in Fix Suggestions
+      try {
+        const updatedRecs = await api.getRecommendations();
+        if (updatedRecs) {
+          setRecommendations(updatedRecs);
+        }
+      } catch (err) {
+        console.warn('Error refreshing recommendations after report verification:', err);
+      }
     }
   };
 
@@ -202,7 +223,7 @@ export default function App() {
   const handleAddDetectedFeatureToTwin = (label: string, type: any, confidence: number) => {
     const newFeature: AccessibilityFeature = {
       id: `feat-ai-${Date.now()}`,
-      buildingId: selectedBuilding.id,
+      buildingId: selectedBuilding?.id || '',
       floorId: 0,
       name: `${label} (AI Detected)`,
       type: type || 'ramp',
@@ -220,8 +241,19 @@ export default function App() {
     setFeatures(prev => [newFeature, ...prev]);
   };
 
-  const handleRecommendationStatusUpdated = (recId: string, newStatus: 'Pending' | 'In Progress' | 'Completed') => {
-    setRecommendations(prev => prev.map(r => r.id === recId ? { ...r, status: newStatus } : r));
+  const handleRecommendationStatusUpdated = (recId: string, newStatus: 'Pending' | 'In Progress' | 'Completed', reportId?: string) => {
+    if (newStatus === 'Completed') {
+      // 1. Remove that Fix Suggestion card from active recommendations list
+      setRecommendations(prev => prev.filter(r => r.id !== recId && r.reportId !== recId));
+
+      // 2. Mark original report as Solved / resolved
+      const targetRepId = reportId || recommendations.find(r => r.id === recId || r.reportId === recId)?.reportId;
+      if (targetRepId) {
+        handleReportResolved(targetRepId);
+      }
+    } else {
+      setRecommendations(prev => prev.map(r => (r.id === recId || r.reportId === recId) ? { ...r, status: newStatus } : r));
+    }
   };
 
   return (
@@ -250,7 +282,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'digital-twin' && (
+        {activeTab === 'digital-twin' && selectedBuilding && (
           <DigitalTwinMap
             building={selectedBuilding}
             features={features}
@@ -280,7 +312,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'navigation' && (
+        {activeTab === 'navigation' && selectedBuilding && (
           <AccessibleNavigation
             building={selectedBuilding}
             onRouteCalculated={(route) => setActiveRoute(route)}
@@ -320,7 +352,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'score' && (
+        {activeTab === 'score' && selectedBuilding && (
           <BuildingScoreCard
             building={selectedBuilding}
             allBuildings={buildings}
