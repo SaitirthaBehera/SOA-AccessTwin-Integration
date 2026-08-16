@@ -112,7 +112,7 @@ cd SOA-AccessTwin-Integration
 
 ### 2. Setup Backend (Python FastAPI)
 ```bash
-cd "Hackathon Model"
+cd server
 pip install -r requirements.txt
 ```
 
@@ -130,7 +130,7 @@ uvicorn main:app --reload --port 8000
 
 ### 3. Setup Frontend (React + Vite)
 ```bash
-cd camnavdemo
+cd client
 npm install
 npm run dev
 ```
@@ -147,14 +147,13 @@ http://localhost:3000
 ```
 SOA-AccessTwin-Integration/
 │
-├── Hackathon Model/              # ⚙️ Python FastAPI Backend
+├── server/                       # ⚙️ Python FastAPI Backend
 │   ├── main.py                   #    FastAPI app entry point
 │   ├── config.py                 #    Environment configuration
 │   ├── requirements.txt          #    Python dependencies
 │   ├── routes/
 │   │   ├── detect.py             #    /api/detect - AI barrier detection
-│   │   ├── navigate.py           #    /api/navigate - Accessible routing
-│   │   └── recommendations.py    #    /api/recommendations - Civil fixes
+│   │   └── navigate.py           #    /api/navigate - Accessible routing
 │   ├── services/
 │   │   ├── vision_model.py       #    Gemini 3.7 Vision + YOLOv8 inference
 │   │   ├── accessibility_router.py   # Dijkstra multi-profile routing engine
@@ -168,7 +167,7 @@ SOA-AccessTwin-Integration/
 │   └── scripts/
 │       └── push_to_supabase.py   #    One-click Supabase data sync
 │
-├── camnavdemo/                   # 🎨 React + TypeScript Frontend
+├── client/                       # 🎨 React + TypeScript Frontend
 │   ├── server.ts                 #    Express proxy server + API middleware
 │   ├── src/
 │   │   ├── components/
