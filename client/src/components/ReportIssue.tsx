@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Building, BuildingRoom, AccessibilityReport, FeatureType, FeatureStatus } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Building, BuildingFloor, BuildingRoom, AccessibilityReport, FeatureType, FeatureStatus } from '../types';
 import { api } from '../services/api';
 import { FloorMap } from './FloorMap';
 import { 
@@ -36,13 +36,65 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
   prefilledLocation
 }) => {
   const [buildingId, setBuildingId] = useState(prefilledLocation?.buildingId || selectedBuilding?.id || '');
-  const selectedBuildingData = buildings.find(b => b.id === buildingId) || selectedBuilding || buildings[0];
 
-  const availableFloors = selectedBuildingData?.floors || [];
-  const initialFloorId = prefilledLocation?.floorId ?? availableFloors[0]?.floorId ?? 0;
+  useEffect(() => {
+    if (selectedBuilding && selectedBuilding.id !== buildingId) {
+      handleBuildingChange(selectedBuilding.id);
+    }
+  }, [selectedBuilding]);
 
-  const [floorId, setFloorId] = useState<number>(initialFloorId);
-  const selectedFloorData = availableFloors.find(f => f.floorId === floorId) || availableFloors[0];
+  const selectedBuildingData = buildings.find(b => b.id === buildingId) || (selectedBuilding?.id === buildingId ? selectedBuilding : null) || buildings[0];
+
+  const [buildingFloors, setBuildingFloors] = useState<BuildingFloor[]>(() => {
+    return selectedBuildingData?.floors || [];
+  });
+
+  const availableFloors = buildingFloors.length > 0 ? buildingFloors : (selectedBuildingData?.floors || []);
+
+  const [floorId, setFloorId] = useState<string | number>(() => {
+    if (prefilledLocation?.floorId !== undefined) return prefilledLocation.floorId;
+    return availableFloors[0]?.floorId ?? '';
+  });
+
+  // Keep floors synchronized with selected building
+  useEffect(() => {
+    let isMounted = true;
+    async function syncFloors() {
+      if (!buildingId) return;
+
+      const bldg = buildings.find(b => b.id === buildingId) || (selectedBuilding?.id === buildingId ? selectedBuilding : null);
+      if (bldg?.floors && bldg.floors.length > 0) {
+        if (isMounted) {
+          setBuildingFloors(bldg.floors);
+          setFloorId(prev => {
+            const exists = bldg.floors.some(f => String(f.floorId) === String(prev));
+            return exists ? prev : bldg.floors[0].floorId;
+          });
+        }
+      } else {
+        try {
+          const fList = await api.getFloorsForBuilding(buildingId);
+          if (isMounted) {
+            setBuildingFloors(fList);
+            if (fList.length > 0) {
+              setFloorId(prev => {
+                const exists = fList.some(f => String(f.floorId) === String(prev));
+                return exists ? prev : fList[0].floorId;
+              });
+            } else {
+              setFloorId('');
+            }
+          }
+        } catch (e) {
+          console.error('Error fetching floors for building:', buildingId, e);
+        }
+      }
+    }
+    syncFloors();
+    return () => { isMounted = false; };
+  }, [buildingId, buildings, selectedBuilding]);
+
+  const selectedFloorData = availableFloors.find(f => String(f.floorId) === String(floorId)) || availableFloors[0];
 
   // Try to find initial room if prefilledLocation exists
   const initialRoom = prefilledLocation && selectedFloorData
@@ -56,7 +108,8 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
 
   const [selectedRoom, setSelectedRoom] = useState<BuildingRoom | null>(initialRoom);
   const [featureName, setFeatureName] = useState(initialRoom?.name || '');
-  const [featureType, setFeatureType] = useState<FeatureType>('ramp');
+  const [featureType, setFeatureType] = useState<string>('ramp');
+  const [availableFeatureOptions, setAvailableFeatureOptions] = useState<{ label: string; value: string }[]>([]);
   const [status, setStatus] = useState<FeatureStatus>('broken');
   const [description, setDescription] = useState('');
   const [reporterName, setReporterName] = useState('');
@@ -76,21 +129,34 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
   // 1. Building Change Handler -> Resets floor, clears room, location name, and pin
-  const handleBuildingChange = (newBuildingId: string) => {
+  const handleBuildingChange = async (newBuildingId: string) => {
     setBuildingId(newBuildingId);
-    const newBldg = buildings.find(b => b.id === newBuildingId) || buildings[0];
-    const newFloors = newBldg?.floors || [];
-    const newFirstFloorId = newFloors[0]?.floorId ?? 0;
-    
-    setFloorId(newFirstFloorId);
     setPinLocation(null);
     setSelectedRoom(null);
     setFeatureName('');
     setLocationError(null);
+
+    const newBldg = buildings.find(b => b.id === newBuildingId) || (selectedBuilding?.id === newBuildingId ? selectedBuilding : null);
+    if (newBldg?.floors && newBldg.floors.length > 0) {
+      setBuildingFloors(newBldg.floors);
+      setFloorId(newBldg.floors[0].floorId);
+    } else {
+      try {
+        const newFloors = await api.getFloorsForBuilding(newBuildingId);
+        setBuildingFloors(newFloors);
+        if (newFloors.length > 0) {
+          setFloorId(newFloors[0].floorId);
+        } else {
+          setFloorId('');
+        }
+      } catch (err) {
+        console.error('Failed to load floors for building', newBuildingId, err);
+      }
+    }
   };
 
   // 2. Floor Change Handler -> Clears room, location name, and pin
-  const handleFloorChange = (newFloorId: number) => {
+  const handleFloorChange = (newFloorId: string | number) => {
     setFloorId(newFloorId);
     setPinLocation(null);
     setSelectedRoom(null);
@@ -126,6 +192,26 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
     }
   };
 
+  // Sync available features when building/floor changes
+  useEffect(() => {
+    if (!buildingId || floorId === '') {
+      setAvailableFeatureOptions([]);
+      return;
+    }
+
+    api.getAvailableFeatureColumns(String(floorId)).then((features) => {
+      const options = features.map(colName => ({ label: colName, value: colName }));
+      setAvailableFeatureOptions(options);
+      
+      // Reset feature type if not in new options
+      if (options.length > 0 && !options.find(o => o.value === featureType)) {
+        setFeatureType(options[0].value);
+      } else if (options.length === 0) {
+        setFeatureType('other');
+      }
+    });
+  }, [buildingId, floorId]);
+
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -155,7 +241,8 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
         buildingId,
         buildingName: selectedBuildingData?.name || 'Unknown Building',
         featureName: selectedRoom.name,
-        featureType,
+        featureId: selectedRoom.id,
+        featureType: featureType as FeatureType,
         status,
         description: description.trim(),
         floorId,
@@ -313,12 +400,12 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
               </label>
               <select
                 id="select-report-floor"
-                value={floorId}
-                onChange={(e) => handleFloorChange(Number(e.target.value))}
+                value={String(floorId || (selectedFloorData ? selectedFloorData.floorId : ''))}
+                onChange={(e) => handleFloorChange(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 {availableFloors.map(f => (
-                  <option key={f.floorId} value={f.floorId}>{f.name}</option>
+                  <option key={String(f.floorId)} value={String(f.floorId)}>{f.name}</option>
                 ))}
               </select>
             </div>
@@ -379,17 +466,16 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
               <select
                 id="select-feature-type"
                 value={featureType}
-                onChange={(e) => setFeatureType(e.target.value as FeatureType)}
+                onChange={(e) => setFeatureType(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
-                <option value="ramp">Ramp</option>
-                <option value="lift">Lift / Elevator</option>
-                <option value="toilet">Accessible Restroom</option>
-                <option value="signage">Tactile Signage</option>
-                <option value="parking">Accessible Parking</option>
-                <option value="door">Doorway / Sliding Door</option>
-                <option value="stairs">Stairs / Steps Barrier</option>
-                <option value="other">Other Infrastructure</option>
+                {availableFeatureOptions.length > 0 ? (
+                  availableFeatureOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))
+                ) : (
+                  <option value="other">No features available</option>
+                )}
               </select>
             </div>
 

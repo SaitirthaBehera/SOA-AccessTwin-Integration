@@ -16,11 +16,15 @@ import { HowItWorksModal } from './components/HowItWorksModal';
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [buildings, setBuildings] = useState<Building[]>([]);
+  const [homeBuildings, setHomeBuildings] = useState<Building[]>([]);
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
   const [features, setFeatures] = useState<AccessibilityFeature[]>([]);
   const [reports, setReports] = useState<AccessibilityReport[]>([]);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [activeRoute, setActiveRoute] = useState<RouteResult | null>(null);
+  const [accessibilityFeaturesCount, setAccessibilityFeaturesCount] = useState<number>(0);
+  const [adminReportsCount, setAdminReportsCount] = useState<number>(0);
+  const [verifiedReportsCount, setVerifiedReportsCount] = useState<number>(0);
 
   const [prefilledLocation, setPrefilledLocation] = useState<{ buildingId: string; floorId: number; x: number; y: number } | null>(null);
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState<boolean>(false);
@@ -76,39 +80,62 @@ export default function App() {
   // Load initial data
   useEffect(() => {
     async function loadInitialData() {
+      const sBuildings = await api.getSupabaseBuildings();
       const bList = await api.getBuildings();
-      if (bList && bList.length > 0) {
-        setBuildings(bList);
-        setSelectedBuilding(bList[0]);
+      
+      const allBuildings = sBuildings && sBuildings.length > 0 ? sBuildings : (bList || []);
+      
+      if (allBuildings.length > 0) {
+        setBuildings(allBuildings);
       }
+      
+      setHomeBuildings(sBuildings || []);
       
       const rList = await api.getReports();
       if (rList) setReports(rList);
 
       const recList = await api.getRecommendations();
       if (recList) setRecommendations(recList);
+
+      const count = await api.getAccessibilityFeaturesCount();
+      setAccessibilityFeaturesCount(count);
+
+      const adminCount = await api.getAdminReportsCount();
+      setAdminReportsCount(adminCount);
+
+      const totalReportsCount = await api.getReportsCount();
+      setVerifiedReportsCount(Math.max(0, totalReportsCount - adminCount));
     }
     loadInitialData();
   }, []);
 
   // Update floors and features whenever selected building changes
   useEffect(() => {
+    console.log('[DEBUG] App.tsx - selectedBuilding:', selectedBuilding);
     async function updateBuildingData() {
-      if (!selectedBuilding) return;
+      if (!selectedBuilding) {
+        console.log('[DEBUG] App.tsx - No selected building');
+        return;
+      }
       
+      console.log('[DEBUG] App.tsx - Fetching floors for:', selectedBuilding.id);
       const fList = await api.getFloorsForBuilding(selectedBuilding.id);
+      console.log('[DEBUG] App.tsx - Floors fetched:', fList);
       
       // Fetch rooms for each floor
       const floorsWithRooms = await Promise.all(
         fList.map(async (f) => {
-          const rooms = await api.getRoomsForFloor(f.floorId, selectedBuilding.id);
+          const rooms = await api.getRoomsForFloor(String(f.floorId), selectedBuilding.id);
           return { ...f, rooms };
         })
       );
       
+      console.log('[DEBUG] App.tsx - Floors with rooms:', floorsWithRooms);
       setSelectedBuilding(prev => ({ ...prev, floors: floorsWithRooms }));
+      setBuildings(prev => prev.map(b => b.id === selectedBuilding.id ? { ...b, floors: floorsWithRooms } : b));
 
       const featuresList = await api.getFeatures(selectedBuilding.id);
+      console.log('[DEBUG] App.tsx - Features fetched:', featuresList);
       if (featuresList) setFeatures(featuresList);
     }
     updateBuildingData();
@@ -256,18 +283,22 @@ export default function App() {
     }
   };
 
+  const handleSelectBuilding = (buildingId: string) => {
+    const building = homeBuildings.find(b => b.id === buildingId) || null;
+    setSelectedBuilding(building);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col antialiased selection:bg-blue-500 selection:text-white">
       {/* Top Navbar */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        selectedBuilding={selectedBuilding}
-        buildings={buildings}
-        onSelectBuilding={(b) => setSelectedBuilding(b)}
         onOpenHowItWorks={() => setIsHowItWorksOpen(true)}
         isAdminLoggedIn={isAdminLoggedIn}
         onLogoutAdmin={handleLogoutAdmin}
+        onSelectBuilding={handleSelectBuilding}
+        selectedBuildingId={selectedBuilding?.id || null}
       />
 
       {/* Main Content Viewport Container */}
@@ -275,14 +306,18 @@ export default function App() {
         {activeTab === 'dashboard' && (
           <HomeDashboard
             buildings={buildings}
+            homeBuildings={homeBuildings}
             selectedBuilding={selectedBuilding}
             reports={reports}
+            accessibilityFeaturesCount={accessibilityFeaturesCount}
+            adminReportsCount={adminReportsCount}
+            verifiedReportsCount={verifiedReportsCount}
             onSelectBuilding={(b) => setSelectedBuilding(b)}
             onNavigateToTab={(tab) => setActiveTab(tab)}
           />
         )}
 
-        {activeTab === 'digital-twin' && selectedBuilding && (
+        {activeTab === 'digital-twin' && (
           <DigitalTwinMap
             building={selectedBuilding}
             features={features}
@@ -312,7 +347,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'navigation' && selectedBuilding && (
+        {activeTab === 'navigation' && (
           <AccessibleNavigation
             building={selectedBuilding}
             onRouteCalculated={(route) => setActiveRoute(route)}

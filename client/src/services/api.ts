@@ -1,4 +1,4 @@
-import { Building, AccessibilityFeature, AccessibilityReport, Recommendation, DisabilityProfile, RouteResult, AiDetectionResult, VerificationStatus, ConfidenceLevel, BuildingFloor, BuildingRoom } from '../types';
+import { Building, AccessibilityFeature, AccessibilityReport, Recommendation, DisabilityProfile, RouteResult, AiDetectionResult, VerificationStatus, ConfidenceLevel, BuildingFloor, BuildingRoom, FloorMap, FeatureType, FeatureStatus } from '../types';
 import { calculateAccessibleRoute } from '../utils/navigation';
 import { supabase, isSupabaseConfigured, signInAdminWithSupabase } from '../lib/supabase';
 import { MOCK_BUILDINGS, MOCK_REPORTS, MOCK_NODES, MOCK_EDGES, MOCK_RECOMMENDATIONS } from '../data/mockData';
@@ -141,20 +141,301 @@ export const api = {
     return MOCK_BUILDINGS;
   },
 
-  async getFloorsForBuilding(buildingId: string): Promise<BuildingFloor[]> {
-    const building = MOCK_BUILDINGS.find(b => b.id === buildingId);
-    return building?.floors || [];
+  async getSupabaseBuildings(): Promise<Building[]> {
+    if (isSupabaseConfigured()) {
+      try {
+        const { data } = await supabase.from('buildings').select('*');
+        console.log('[DEBUG] getSupabaseBuildings data:', data);
+        if (data && data.length > 0) {
+          return data.map((b: any) => {
+            console.log('[DEBUG] Building:', b.building_name, 'image_url:', b.image_url);
+            return {
+              id: String(b.building_id || b.id),
+              name: b.building_name || b.name || 'Building',
+              code: b.building_code || 'BLDG',
+              campus: b.campus || 'SOA Campus',
+              address: b.address || '',
+              floorsCount: Number(b.floors_count || 0),
+              overallScore: Number(b.overall_score || 0),
+              imageUrl: b.image_url || '',
+              description: b.description || '',
+              floors: [],
+              scores: {
+                wheelchair: 90,
+                visual: 88,
+                hearing: 85,
+                signage: 92,
+                restrooms: 89,
+                navigation: 94
+              }
+            };
+          });
+        }
+      } catch (e) {
+        console.warn('Error loading buildings from Supabase:', e);
+      }
+    }
+    return [];
   },
 
-  async getRoomsForFloor(floorId: number, buildingId: string): Promise<BuildingRoom[]> {
-    const building = MOCK_BUILDINGS.find(b => b.id === buildingId);
-    const floor = building?.floors.find(f => f.floorId === floorId);
-    return floor?.rooms || [];
+  async getFloorsForBuilding(buildingId: string): Promise<BuildingFloor[]> {
+    if (!isSupabaseConfigured()) return [];
+    try {
+      const { data, error } = await supabase
+        .from('floors')
+        .select('*')
+        .eq('building_id', buildingId);
+      if (error) {
+        console.error('[DEBUG] API - Floors error:', error);
+        throw error;
+      }
+      console.log('[DEBUG] API - Floors data:', data);
+      return (data || []).map((f: any) => ({
+        floorId: f.floor_id,
+        buildingId: f.building_id,
+        name: f.floor_name || `Floor ${f.floor_number}`,
+        rooms: [], // Will fetch rooms separately if needed
+        dimensions: { width: 1000, height: 600 }
+      }));
+    } catch (e) {
+      console.warn('Error fetching floors from Supabase:', e);
+      return [];
+    }
+  },
+
+  async getRoomsForFloor(floorId: string, buildingId: string): Promise<BuildingRoom[]> {
+    if (!isSupabaseConfigured()) return [];
+    try {
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('*')
+        .eq('floor_id', floorId);
+      if (error) {
+        console.error('[DEBUG] API - Rooms error:', error);
+        throw error;
+      }
+      return (data || []).map((r: any) => {
+        console.log("RAW SUPABASE ROOM", r);
+        const transformed = {
+          id: r.room_id || r.id,
+          name: r.room_name || 'Room',
+          category: r.category || 'other',
+          x: Number(r.x),
+          y: Number(r.y),
+          width: Number(r.width),
+          height: Number(r.height),
+          isAccessible: r.is_accessible || false
+        };
+        console.log("TRANSFORMED ROOM", transformed);
+        return transformed;
+      });
+    } catch (e) {
+      console.warn('Error fetching rooms from Supabase:', e);
+      return [];
+    }
   },
 
   async getFeatures(buildingId: string): Promise<AccessibilityFeature[]> {
-    // Return localFeatures as defined in the file
+    // This seems to be used for the dashboard features, not the map features
     return localFeatures.filter(f => f.buildingId === buildingId);
+  },
+
+  async getFloorMap(buildingId: string, floorId: string): Promise<FloorMap | null> {
+    if (!isSupabaseConfigured()) return null;
+    console.log('[DEBUG] API - Fetching floor map:', buildingId, floorId);
+    try {
+      const { data, error } = await supabase
+        .from('floor_maps')
+        .select('*')
+        .eq('building_id', buildingId)
+        .eq('floor_id', floorId)
+        .maybeSingle();
+      if (error) {
+        console.error('[DEBUG] API - Floor map error:', error);
+        throw error;
+      }
+      console.log('[DEBUG] API - Floor map data:', data);
+      if (!data) return null;
+      return {
+        mapId: data.map_id,
+        buildingId: data.building_id,
+        floorId: data.floor_id,
+        imageUrl: data.image_url,
+        width: data.width,
+        height: data.height
+      };
+    } catch (e) {
+      console.warn('Error fetching floor map:', e);
+      return null;
+    }
+  },
+
+  async getAccessibilityFeaturesCount(): Promise<number> {
+    if (!isSupabaseConfigured()) return 0;
+    try {
+      const { count, error } = await supabase
+        .from('accessibility_features')
+        .select('*', { count: 'exact', head: true });
+      if (error) {
+        console.error('[DEBUG] API - Accessibility features count error:', error);
+        throw error;
+      }
+      return count || 0;
+    } catch (e) {
+      console.warn('Error fetching accessibility features count:', e);
+      return 0;
+    }
+  },
+
+  async getAdminReportsCount(): Promise<number> {
+    if (!isSupabaseConfigured()) return 0;
+    try {
+      const { count, error } = await supabase
+        .from('admin_reports')
+        .select('*', { count: 'exact', head: true });
+      if (error) {
+        console.error('[DEBUG] API - Admin reports count error:', error);
+        throw error;
+      }
+      return count || 0;
+    } catch (e) {
+      console.warn('Error fetching admin reports count:', e);
+      return 0;
+    }
+  },
+
+  async getReportsCount(): Promise<number> {
+    if (!isSupabaseConfigured()) return 0;
+    try {
+      const { count, error } = await supabase
+        .from('reports')
+        .select('*', { count: 'exact', head: true });
+      if (error) {
+        console.error('[DEBUG] API - Reports count error:', error);
+        throw error;
+      }
+      return count || 0;
+    } catch (e) {
+      console.warn('Error fetching reports count:', e);
+      return 0;
+    }
+  },
+
+  async getAvailableFeatureColumns(floorId: string): Promise<string[]> {
+    if (!isSupabaseConfigured()) return [];
+    console.log('[DEBUG] API - Fetching available feature columns for floor:', floorId);
+    try {
+      const { data, error } = await supabase
+        .from('accessibility_features')
+        .select('*')
+        .eq('floor_id', floorId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[DEBUG] API - Accessibility features row error:', error);
+        throw error;
+      }
+
+      if (!data) return [];
+
+      // Filter columns that have the value 'present'
+      const presentFeatures = Object.keys(data).filter(key => data[key] === 'present');
+      
+      console.log('[DEBUG] API - Available feature columns:', presentFeatures);
+      return presentFeatures;
+    } catch (e) {
+      console.warn('Error fetching available feature columns:', e);
+      return [];
+    }
+  },
+
+  async getAccessibilityFeatureColumns(): Promise<string[]> {
+    if (!isSupabaseConfigured()) return [];
+    try {
+      const { data, error } = await supabase
+        .from('accessibility_features')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+
+      if (error || !data) {
+        console.error('[DEBUG] API - Error fetching feature columns:', error);
+        return [];
+      }
+
+      // Filter system columns
+      const systemColumns = ['id', 'building_id', 'floor_id', 'feature_geometry', 'updated_at', 'created_at'];
+      return Object.keys(data).filter(key => !systemColumns.includes(key));
+    } catch (e) {
+      console.warn('Error fetching available feature columns:', e);
+      return [];
+    }
+  },
+
+  async updateAccessibilityFeatureStatus(floorId: string, columnName: string, status: 'present' | 'temporary' | 'none'): Promise<{ success: boolean }> {
+    if (!isSupabaseConfigured()) return { success: false };
+    try {
+      const { error } = await supabase
+        .from('accessibility_features')
+        .update({ [columnName]: status })
+        .eq('floor_id', floorId);
+
+      if (error) throw error;
+      return { success: true };
+    } catch (e) {
+      console.error('Error updating accessibility feature status:', e);
+      throw e;
+    }
+  },
+
+  async getAccessibilityFeatures(buildingId: string, floorId: string): Promise<AccessibilityFeature[]> {
+    if (!isSupabaseConfigured()) return [];
+    console.log('[DEBUG] API - Fetching accessibility features from feature_geometry for floor:', floorId);
+    try {
+      const { data, error } = await supabase
+        .from('accessibility_features')
+        .select('*')
+        .eq('floor_id', floorId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[DEBUG] API - Accessibility features error:', error);
+        throw error;
+      }
+
+      if (!data) return [];
+
+      const features: AccessibilityFeature[] = [];
+      const geometry = data.feature_geometry;
+
+      // Iterate over columns to find 'present' features
+      Object.keys(data).forEach((key) => {
+        if ((data[key] === 'present' || data[key] === 'temporary') && geometry && geometry[key]) {
+          const geom = geometry[key];
+          features.push({
+            id: `${key}-${data.id}`,
+            buildingId: data.building_id,
+            floorId: parseInt(data.floor_id),
+            name: key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+            type: (key.includes('stairs') ? 'stairs' : key.includes('lift') ? 'lift' : key.includes('toilet') ? 'toilet' : key.includes('ramp') ? 'ramp' : key.includes('entrance') ? 'entrance' : 'other') as FeatureType,
+            status: data[key] === 'temporary' ? 'temporary' : 'working',
+            x: geom.x, // Absolute 1600x800 coordinate
+            y: geom.y, // Absolute 1600x800 coordinate
+            description: `Accessibility feature: ${key} (${data[key]})`,
+            confidenceScore: 100,
+            confidenceLevel: 'HIGH',
+            verificationStatus: 'verified',
+            lastUpdated: new Date().toISOString()
+          });
+        }
+      });
+      
+      console.log('[DEBUG] API - Accessibility features transformed:', features);
+      return features;
+    } catch (e) {
+      console.warn('Error fetching accessibility features:', e);
+      return [];
+    }
   },
 
   /**
@@ -171,6 +452,7 @@ export const api = {
     bbox?: number[];
     source?: string;
     description?: string;
+    feature_column?: string;
   }): Promise<{ success: boolean; message: string; feature: AccessibilityFeature }> {
     const headers = await getAuthHeaders();
     const res = await fetch('/api/twin-map/features', {
@@ -215,7 +497,13 @@ export const api = {
     const reporterName = reportData.reporterName?.trim() || 'Anonymous Campus Reporter';
     const bId = reportData.buildingId || 'bldg-iter-main';
     const bName = reportData.buildingName || 'SOA ITER Academic Block C';
-    const flId = Number(reportData.floorId ?? 0);
+    let flId = 0;
+    if (typeof reportData.floorId === 'number' && !Number.isNaN(reportData.floorId)) {
+      flId = reportData.floorId;
+    } else if (typeof reportData.floorId === 'string') {
+      const match = (reportData.floorId as string).match(/\d+/);
+      flId = match ? parseInt(match[0], 10) : 0;
+    }
     const flName = reportData.floorName || 'Ground Floor';
     const fName = (reportData.featureName || 'Reported Location').trim();
     const fType = reportData.featureType;
@@ -414,6 +702,7 @@ export const api = {
         floor: flName,
         floor_id: flId,
         floor_name: flName,
+        feature_id: (reportData as any).featureId || (reportData as any).feature_id || null,
         feature_name: fName,
         feature_type: fType,
         issue_type: reportData.status || 'broken',
@@ -839,7 +1128,7 @@ export const api = {
     reportId?: string;
     buildingId?: string;
     buildingName?: string;
-    floorId?: number;
+    floorId?: number | string;
     userQuery: string;
     reporterName?: string;
     disabilityType?: string;
@@ -1028,82 +1317,25 @@ export const api = {
                   estimated_users_affected: recModel.estimatedUsersAffected,
                   updated_at: new Date().toISOString()
                 };
-
-                const { data: savedConf } = await supabase
+                
+                await supabase
                   .from('report_confirmations')
-                  .upsert([confPayload], { onConflict: 'report_id' })
-                  .select()
-                  .maybeSingle();
-
-                if (savedConf && savedConf.id && !isUUID(recModel.id)) {
-                  recModel.id = savedConf.id;
-                }
-                console.log('[Supabase] Fix suggestion synchronized with report_confirmations for report:', validReportUuid);
+                  .upsert([confPayload], { onConflict: 'report_id' });
               }
+              
             } catch (supErr) {
-              console.warn('Notice saving recommendation & confirmation to Supabase:', supErr);
+              console.warn('Error persisting AI recommendation to Supabase:', supErr);
             }
           }
 
-          // Add to local state if not already present
-          if (!localRecommendations.some(r => r.id === recModel.id || (params.reportId && r.reportId === params.reportId))) {
-            localRecommendations.unshift(recModel);
-          }
+          localRecommendations.push(recModel);
           return recModel;
         }
       }
     } catch (e) {
-      console.warn('Error analyzing report for recommendations:', e);
+      console.warn('analyzeAndGenerateRecommendation failed:', e);
     }
+    
     return null;
-  },
-
-  async findRoute(startNodeId: string, targetNodeId: string, profile: DisabilityProfile): Promise<RouteResult | null> {
-    try {
-      const res = await fetch('/api/navigate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ startNodeId, targetNodeId, profile })
-      });
-      if (res.ok) return await res.json();
-    } catch {
-      // Fallback
-    }
-    return calculateAccessibleRoute(startNodeId, targetNodeId, profile, MOCK_NODES, MOCK_EDGES);
-  },
-
-  async analyzeImage(photoData: string): Promise<AiDetectionResult> {
-    const res = await fetch('/api/detect', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({ image: photoData })
-    });
-
-    const rawText = await res.text();
-    let data: any = null;
-    try {
-      data = JSON.parse(rawText);
-    } catch {
-      throw new Error('AI detection service returned an invalid response.');
-    }
-
-    if (!res.ok || (data && data.status === 'error')) {
-      throw new Error(data?.message || data?.error || 'AI detection failed.');
-    }
-
-    if (data && (data.status === 'success' || data.results || data.detectedObjects)) {
-      const detected = data.detectedObjects || data.results || [];
-      return {
-        imageId: data.imageId || `img-${Date.now()}`,
-        imageUrl: data.imageUrl || photoData,
-        analyzedAt: data.analyzedAt || new Date().toISOString(),
-        overallAccessibility: data.overallAccessibility || (detected.some((o: any) => o.status === 'broken') ? 'Moderate' : 'High'),
-        summary: data.summary || data.message || (detected.length > 0 ? `AI identified ${detected.length} accessibility elements.` : 'No accessibility features detected.'),
-        detectedObjects: detected
-      };
-    }
-
-    throw new Error('No valid detection result returned from AI model.');
   }
 };
-

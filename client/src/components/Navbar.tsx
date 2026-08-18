@@ -8,30 +8,30 @@ import {
   ShieldCheck,
   Lock,
   BarChart3, 
-  HelpCircle
+  HelpCircle,
+  Zap
 } from 'lucide-react';
 import { Building } from '../types';
+import { BuildingSelector } from './BuildingSelector';
 
 interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  selectedBuilding: Building | null;
-  buildings: Building[];
-  onSelectBuilding: (b: Building) => void;
   onOpenHowItWorks: () => void;
   isAdminLoggedIn?: boolean;
   onLogoutAdmin?: () => void;
+  onSelectBuilding: (buildingId: string) => void;
+  selectedBuildingId: string | null;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
-  selectedBuilding,
-  buildings,
-  onSelectBuilding,
   onOpenHowItWorks,
   isAdminLoggedIn = false,
-  onLogoutAdmin
+  onLogoutAdmin,
+  onSelectBuilding,
+  selectedBuildingId
 }) => {
   // Navigation tabs visible in the main navbar
   const navItems = [
@@ -95,31 +95,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Building Selector Dropdown & Admin Auth Action */}
+          {/* Building Selector & Admin Login / Logout Action Button */}
           <div className="flex items-center space-x-3">
-            <div className="relative">
-              <label htmlFor="select-building-nav" className="sr-only">Select Building</label>
-              <div className="flex items-center bg-slate-100 hover:bg-slate-200/80 transition-colors rounded-lg px-3 py-1.5 border border-slate-200 text-xs">
-                <Building2 className="w-4 h-4 text-slate-500 mr-2 shrink-0" />
-                <select
-                  id="select-building-nav"
-                  value={selectedBuilding?.id || ''}
-                  onChange={(e) => {
-                    const found = buildings.find(b => b.id === e.target.value);
-                    if (found) onSelectBuilding(found);
-                  }}
-                  className="bg-transparent text-slate-800 font-semibold focus:outline-none cursor-pointer pr-2 max-w-[180px] sm:max-w-[240px] truncate"
-                >
-                  {buildings.map(b => (
-                    <option key={b.id} value={b.id}>
-                      {b.name} ({b.overallScore}/100)
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Admin Login / Logout Action Button */}
+            <BuildingSelector 
+              selectedBuildingId={selectedBuildingId}
+              onSelect={onSelectBuilding}
+            />
             {isAdminLoggedIn ? (
               <button
                 id="btn-nav-admin-logout"
@@ -143,7 +124,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
         </div>
-
         {/* Navigation Tabs Bar */}
         <nav id="nav-tab-list" className="flex items-center space-x-1 overflow-x-auto no-scrollbar border-t border-slate-100 py-2 text-xs font-medium">
           {navItems.map((item) => {

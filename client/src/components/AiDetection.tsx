@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { AiDetectionResult, Building, AccessibilityFeature } from '../types';
+import React, { useState, useRef, useEffect } from 'react';
+import { AiDetectionResult, Building, AccessibilityFeature, BuildingFloor } from '../types';
 import { api } from '../services/api';
 import { navigationApi, VisionDetectionResponse } from '../services/navigationApi';
 import { 
@@ -63,13 +63,28 @@ export const AiDetection: React.FC<AiDetectionProps> = ({
   const [selectedFeatureForModal, setSelectedFeatureForModal] = useState<DetectedFeatureItem | null>(null);
   const [selectedBuildingId, setSelectedBuildingId] = useState<string>('');
   const [selectedFloorId, setSelectedFloorId] = useState<string>('');
+  const [availableFeatureColumns, setAvailableFeatureColumns] = useState<string[]>([]);
+  const [selectedFeatureColumn, setSelectedFeatureColumn] = useState<string>('');
+  const [selectedStatus, setSelectedStatus] = useState<'present' | 'temporary' | 'none' | ''>('');
   const [isSubmittingToTwin, setIsSubmittingToTwin] = useState<boolean>(false);
   const [twinModalError, setTwinModalError] = useState<string | null>(null);
   const [addedFeatureIds, setAddedFeatureIds] = useState<Set<string>>(new Set());
+  const [availableFloors, setAvailableFloors] = useState<BuildingFloor[]>([]);
 
-  // Find currently selected building for dependent floor list
-  const activeModalBuilding = buildings.find(b => b.id === selectedBuildingId);
-  const availableFloors = activeModalBuilding ? activeModalBuilding.floors : [];
+  // Fetch floors when building changes
+  useEffect(() => {
+    if (!selectedBuildingId) {
+      setAvailableFloors([]);
+      return;
+    }
+
+    api.getFloorsForBuilding(selectedBuildingId).then((floors) => {
+      setAvailableFloors(floors);
+    }).catch(err => {
+      console.error('Error fetching floors:', err);
+      setAvailableFloors([]);
+    });
+  }, [selectedBuildingId]);
 
   const handleSpeakVoice = (text: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
@@ -212,11 +227,17 @@ export const AiDetection: React.FC<AiDetectionProps> = ({
   };
 
   // Open Add to Twin Map modal for specific detected feature
-  const handleOpenAddModal = (feature: DetectedFeatureItem) => {
+  const handleOpenAddModal = async (feature: DetectedFeatureItem) => {
     setSelectedFeatureForModal(feature);
     setSelectedBuildingId(buildings[0]?.id || '');
     setSelectedFloorId('');
     setTwinModalError(null);
+    setSelectedFeatureColumn('');
+    setSelectedStatus('');
+    
+    // Dynamically fetch available accessibility feature columns
+    const columns = await api.getAccessibilityFeatureColumns();
+    setAvailableFeatureColumns(columns);
   };
 
   // Handle building dropdown change
@@ -224,6 +245,7 @@ export const AiDetection: React.FC<AiDetectionProps> = ({
     setSelectedBuildingId(e.target.value);
     setSelectedFloorId(''); // Reset floor selection when building changes
     setTwinModalError(null);
+    setSelectedStatus('');
   };
 
   // Submit feature to Digital Twin Map
@@ -233,8 +255,12 @@ export const AiDetection: React.FC<AiDetectionProps> = ({
       setTwinModalError('Please select a building.');
       return;
     }
-    if (selectedFloorId === '' || isNaN(Number(selectedFloorId))) {
-      setTwinModalError('Please select a floor for the chosen building.');
+    if (!selectedFeatureColumn) {
+      setTwinModalError('Please select a feature column.');
+      return;
+    }
+    if (!selectedStatus) {
+      setTwinModalError('Please select a status.');
       return;
     }
 
@@ -242,14 +268,20 @@ export const AiDetection: React.FC<AiDetectionProps> = ({
     setTwinModalError(null);
 
     const targetBldg = buildings.find(b => b.id === selectedBuildingId);
-    const targetFloor = targetBldg?.floors.find(f => f.floorId === Number(selectedFloorId));
+    const targetFloor = availableFloors.find(f => String(f.floorId) === selectedFloorId);
 
+    if (!targetFloor) {
+      setTwinModalError('Please select a floor for the chosen building.');
+      return;
+    }
     try {
+      // 1. Add feature to digital twin tracking
       const result = await api.addFeatureToTwin({
         building_id: selectedBuildingId,
         floor_id: Number(selectedFloorId),
         feature_type: selectedFeatureForModal.type,
         label: selectedFeatureForModal.label,
+        feature_column: selectedFeatureColumn,
         confidence: selectedFeatureForModal.confidence,
         status: selectedFeatureForModal.status,
         bbox: selectedFeatureForModal.bbox,
@@ -257,10 +289,13 @@ export const AiDetection: React.FC<AiDetectionProps> = ({
         description: selectedFeatureForModal.recommendation
       });
 
+      // 2. Update status in database
+      await api.updateAccessibilityFeatureStatus(selectedFloorId, selectedFeatureColumn, selectedStatus as 'present' | 'temporary' | 'none');
+
       // Mark this feature as added in UI
       setAddedFeatureIds(prev => new Set(prev).add(selectedFeatureForModal.id));
       
-      const successMessage = `✓ ${selectedFeatureForModal.label} added to ${targetBldg?.name || 'Building'} — ${targetFloor?.name || 'Selected Floor'}`;
+      const successMessage = `✓ ${selectedFeatureForModal.label} added & set to ${selectedStatus} on ${targetBldg?.name || 'Building'} — ${targetFloor?.name || 'Selected Floor'}`;
       setExportSuccess(successMessage);
 
       // Notify parent app of new feature
@@ -804,6 +839,55 @@ export const AiDetection: React.FC<AiDetectionProps> = ({
                     Select a building to view its available floors.
                   </p>
                 )}
+              </div>
+
+              {/* Feature Column Selector */}
+              <div className="space-y-1.5">
+                <label 
+                  htmlFor="select-twin-modal-feature" 
+                  className="block text-xs font-bold text-slate-700 uppercase tracking-wider"
+                >
+                  Feature Column <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    id="select-twin-modal-feature"
+                    value={selectedFeatureColumn}
+                    onChange={(e) => setSelectedFeatureColumn(e.target.value)}
+                    disabled={isSubmittingToTwin}
+                    className="w-full bg-white border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 font-semibold cursor-pointer outline-none transition-all"
+                  >
+                    <option value="">-- Select Feature --</option>
+                    {availableFeatureColumns.map(col => (
+                      <option key={col} value={col}>
+                        {col}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Feature Status Selector */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Status <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['present', 'temporary', 'none'] as const).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setSelectedStatus(s)}
+                      className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all ${
+                        selectedStatus === s 
+                          ? 'bg-blue-600 text-white border-blue-600' 
+                          : 'bg-white text-slate-700 border-slate-300 hover:border-blue-400'
+                      }`}
+                    >
+                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 

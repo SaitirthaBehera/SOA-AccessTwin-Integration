@@ -19,16 +19,24 @@ import {
 
 interface HomeDashboardProps {
   buildings: Building[];
+  homeBuildings: Building[];
   selectedBuilding: Building | null;
   reports: AccessibilityReport[];
+  accessibilityFeaturesCount: number;
+  adminReportsCount: number;
+  verifiedReportsCount: number;
   onSelectBuilding: (b: Building) => void;
   onNavigateToTab: (tab: string) => void;
 }
 
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   buildings,
+  homeBuildings,
   selectedBuilding,
   reports,
+  accessibilityFeaturesCount,
+  adminReportsCount,
+  verifiedReportsCount,
   onSelectBuilding,
   onNavigateToTab
 }) => {
@@ -38,7 +46,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     return <div className="text-center p-8 text-slate-500">Loading building data...</div>;
   }
 
-  const filteredBuildings = buildings.filter(b => 
+  const filteredBuildings = homeBuildings.filter(b => 
     b.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     b.campus.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -116,7 +124,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </div>
           </div>
           <div className="mt-4">
-            <span className="text-3xl font-extrabold text-slate-900">{buildings.length}</span>
+            <span className="text-3xl font-extrabold text-slate-900">{homeBuildings.length}</span>
             <span className="text-xs text-slate-500 ml-2">Campus Blocks</span>
           </div>
           <p className="text-xs text-emerald-600 font-medium mt-2 flex items-center">
@@ -133,7 +141,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </div>
           </div>
           <div className="mt-4">
-            <span className="text-3xl font-extrabold text-slate-900">184</span>
+            <span className="text-3xl font-extrabold text-slate-900">{accessibilityFeaturesCount}</span>
             <span className="text-xs text-slate-500 ml-2">Ramps, Lifts, Toilets</span>
           </div>
           <p className="text-xs text-slate-500 mt-2">Active in digital twins</p>
@@ -147,7 +155,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </div>
           </div>
           <div className="mt-4">
-            <span className="text-3xl font-extrabold text-slate-900">14</span>
+            <span className="text-3xl font-extrabold text-slate-900">{adminReportsCount}</span>
             <span className="text-xs text-slate-500 ml-2">Active Tickets</span>
           </div>
           <p className="text-xs text-rose-600 font-medium mt-2">Requires admin verification</p>
@@ -161,7 +169,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </div>
           </div>
           <div className="mt-4">
-            <span className="text-3xl font-extrabold text-slate-900">92%</span>
+            <span className="text-3xl font-extrabold text-slate-900">{verifiedReportsCount}</span>
             <span className="text-xs text-slate-500 ml-2">Accuracy Rate</span>
           </div>
           <p className="text-xs text-purple-600 font-medium mt-2">Verified by campus audit team</p>
@@ -193,22 +201,28 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           {filteredBuildings.map(building => {
             const isSelected = building.id === selectedBuilding.id;
             return (
-              <div
+                <div
                 key={building.id}
-                onClick={() => onSelectBuilding(building)}
+                onClick={() => {
+                  onSelectBuilding(building);
+                  onNavigateToTab('digital-twin');
+                }}
                 className={`group rounded-2xl border transition-all cursor-pointer overflow-hidden flex flex-col ${
                   isSelected
                     ? 'border-blue-600 ring-2 ring-blue-500/20 bg-blue-50/20 shadow-md'
                     : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-md'
                 }`}
               >
-                <div className="h-44 relative overflow-hidden bg-slate-100">
-                  <img
-                    src={building.imageUrl}
-                    alt={building.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    referrerPolicy="no-referrer"
-                  />
+                <div className="aspect-video w-full relative overflow-hidden bg-slate-100">
+                  {building.imageUrl && (
+                    <img
+                      src={building.imageUrl}
+                      alt={building.name}
+                      onError={(e) => console.error(`[IMAGE ERROR] Building: ${building.name}`)}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      referrerPolicy="no-referrer"
+                    />
+                  )}
                   <div className="absolute top-3 right-3 bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-full text-xs font-extrabold text-blue-700 shadow-md">
                     {building.overallScore}/100 Score
                   </div>
@@ -225,18 +239,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
                   <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
                     <span className="text-slate-500">{building.floorsCount} Floors Digitalized</span>
-                    <button
-                      id={`btn-select-building-${building.id}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectBuilding(building);
-                        onNavigateToTab('digital-twin');
-                      }}
+                    <div
                       className="text-blue-600 hover:text-blue-700 font-bold flex items-center space-x-1"
                     >
                       <span>Open Twin</span>
                       <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -283,7 +291,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   <div className="w-12 bg-slate-700 h-2 rounded-full overflow-hidden">
                     <div 
                       className="bg-emerald-400 h-full rounded-full" 
-                      style={{ width: `${item.score}%` }}
+                      style={{ width: `${isNaN(item.score) ? 0 : item.score}%` }}
                     ></div>
                   </div>
                 </div>

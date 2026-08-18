@@ -13,7 +13,7 @@ export type FeatureType =
   | 'obstacle' 
   | 'other';
 
-export type FeatureStatus = 'working' | 'broken' | 'not_available' | 'under_maintenance';
+export type FeatureStatus = 'working' | 'broken' | 'not_available' | 'under_maintenance' | 'temporary' | 'present' | 'none';
 
 export type VerificationStatus = 'unverified' | 'community_verified' | 'admin_verified' | 'verified' | 'rejected';
 
@@ -86,10 +86,11 @@ export interface AccessibilityReport {
   buildingId: string;
   buildingName: string;
   featureName: string;
+  featureId?: string;
   featureType: FeatureType;
   status: FeatureStatus | 'verified' | 'rejected' | 'resolved';
   description: string;
-  floorId: number;
+  floorId: number | string;
   floorName: string;
   location: { x: number; y: number };
   photoUrl?: string;
@@ -130,7 +131,7 @@ export interface AiDetectionResult {
 export interface NavigationNode {
   id: string;
   buildingId: string;
-  floorId: number;
+  floorId: number | string;
   name: string;
   x: number;
   y: number;
@@ -155,7 +156,7 @@ export interface NavigationEdge {
 export interface RouteStep {
   stepNumber: number;
   instruction: string;
-  floorId: number;
+  floorId: number | string;
   floorName: string;
   distanceMeters: number;
   featureTypeUsed?: FeatureType;
@@ -175,6 +176,15 @@ export interface RouteResult {
   accessibleFeaturesUsed: string[];
 }
 
+export interface FloorMap {
+  mapId: string;
+  buildingId: string;
+  floorId: string | number;
+  imageUrl: string;
+  width: number;
+  height: number;
+}
+
 export interface Recommendation {
   id: string;
   reportId?: string;
@@ -192,6 +202,6 @@ export interface Recommendation {
   priority: 'Critical' | 'High' | 'Medium' | 'Low';
   impactScore: number; // calculated score
   status: 'Pending' | 'In Progress' | 'Completed';
-  floorId: number;
+  floorId: number | string;
   locationName: string;
 }

@@ -1,6 +1,7 @@
-import React from 'react';
-import { Building, BuildingFloor, BuildingRoom, AccessibilityFeature } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Building, BuildingFloor, BuildingRoom, AccessibilityFeature, FloorMap as FloorMapType } from '../types';
 import { MapPin, Layers, Building as BuildingIcon, CheckCircle2, AlertTriangle, Sparkles, Navigation } from 'lucide-react';
+import { api } from '../services/api';
 
 interface FloorMapProps {
   building: Building;
@@ -36,23 +37,56 @@ export const FloorMap: React.FC<FloorMapProps> = ({
     );
   }
 
+  const [currentFloorMap, setCurrentFloorMap] = useState<FloorMapType | null>(null);
+  const [rooms, setRooms] = useState<BuildingRoom[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadFloorData() {
+      if (!building || !floor) return;
+      setIsLoading(true);
+      try {
+        const floorMap = await api.getFloorMap(building.id, String(floor.floorId));
+        const floorRooms = (floor.rooms && floor.rooms.length > 0)
+          ? floor.rooms
+          : await api.getRoomsForFloor(String(floor.floorId), building.id);
+        
+        if (isMounted) {
+          setCurrentFloorMap(floorMap);
+          setRooms(floorRooms || []);
+        }
+      } catch (err) {
+        console.error('Failed to load floor map data:', err);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+    loadFloorData();
+    return () => { isMounted = false; };
+  }, [building?.id, floor?.floorId]);
+
+  const mapWidth = currentFloorMap?.width || 1600;
+  const mapHeight = currentFloorMap?.height || 800;
+
   const handleSvgClick = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!onSelectLocation) return;
     const rect = e.currentTarget.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
 
-    const rawX = ((e.clientX - rect.left) / rect.width) * 100;
-    const rawY = ((e.clientY - rect.top) / rect.height) * 100;
-
-    const x = Math.min(98, Math.max(2, Math.round(rawX)));
-    const y = Math.min(98, Math.max(2, Math.round(rawY)));
+    // Calculate coordinates relative to map dimensions
+    const rawX = ((e.clientX - rect.left) / rect.width) * mapWidth;
+    const rawY = ((e.clientY - rect.top) / rect.height) * mapHeight;
 
     // Find if click falls inside any room bounding box
-    const foundRoom = floor.rooms.find(
-      r => x >= r.x && x <= (r.x + r.width) && y >= r.y && y <= (r.y + r.height)
+    const foundRoom = rooms.find(
+      r => rawX >= r.x && rawX <= (r.x + r.width) && 
+           rawY >= r.y && rawY <= (r.y + r.height)
     ) || null;
 
-    onSelectLocation({ x, y }, foundRoom);
+    onSelectLocation({ x: Math.round(rawX), y: Math.round(rawY) }, foundRoom);
   };
 
   const getCategoryColor = (category: string, isAccessible: boolean) => {
@@ -84,157 +118,167 @@ export const FloorMap: React.FC<FloorMapProps> = ({
         </div>
 
         <div className="text-[11px] font-mono text-slate-400 bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-700/60">
-          Map Code: <span className="text-blue-300 font-bold">{building.code}-{floor.floorId}</span>
+          Map Code: <span className="text-blue-300 font-bold">{building.code || 'BLDG'}-{floor.name}</span>
         </div>
       </div>
 
       {/* SVG Canvas Container */}
       <div className="flex-1 bg-slate-950 p-2 sm:p-4 relative overflow-hidden flex items-center justify-center min-h-[340px] select-none">
-        <svg
-          viewBox="0 0 1000 600"
-          className={`w-full h-full ${onSelectLocation ? 'cursor-crosshair' : ''}`}
-          onClick={handleSvgClick}
-        >
-          {/* Background Grid Pattern */}
-          <defs>
-            <pattern id={`grid-${building.id}-${floor.floorId}`} width="40" height="40" patternUnits="userSpaceOnUse">
-              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" strokeWidth="1" />
-            </pattern>
-          </defs>
-          <rect width="1000" height="600" fill={`url(#grid-${building.id}-${floor.floorId})`} />
+        {isLoading ? (
+          <div className="text-slate-400 text-xs flex items-center space-x-2">
+            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <span>Loading {floor.name} digital twin map...</span>
+          </div>
+        ) : (
+          <svg
+            viewBox={`0 0 ${mapWidth} ${mapHeight}`}
+            className={`w-full h-full ${onSelectLocation ? 'cursor-crosshair' : ''}`}
+            onClick={handleSvgClick}
+          >
+            {/* Background Grid Pattern */}
+            <defs>
+              <pattern id={`grid-${building.id}-${floor.floorId}`} width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" strokeWidth="1" />
+              </pattern>
+            </defs>
+            <rect width={mapWidth} height={mapHeight} fill={`url(#grid-${building.id}-${floor.floorId})`} />
 
-          {/* Optional Floorplan Image Layer */}
-          {floor.mapImageUrl && (
-            <image
-              href={floor.mapImageUrl}
-              width="1000"
-              height="600"
-              preserveAspectRatio="xMidYMid slice"
-              opacity="0.3"
-            />
-          )}
+            {/* Optional Floorplan Image Layer */}
+            {currentFloorMap?.imageUrl && (
+              <image
+                href={currentFloorMap.imageUrl}
+                width={mapWidth}
+                height={mapHeight}
+                preserveAspectRatio="xMidYMid slice"
+                opacity="0.35"
+              />
+            )}
 
-          {/* Outer Building Perimeter */}
-          <rect x="20" y="20" width="960" height="560" rx="14" fill="none" stroke="#334155" strokeWidth="6" />
+            {/* Outer Building Perimeter */}
+            <rect x="20" y="20" width={mapWidth - 40} height={mapHeight - 40} rx="14" fill="none" stroke="#334155" strokeWidth="4" />
 
-          {/* Central Connecting Corridor */}
-          <rect x="50" y="270" width="900" height="60" fill="#0f172a" stroke="#1e293b" strokeWidth="2" rx="4" />
-          <text x="500" y="305" fill="#475569" fontSize="12" fontWeight="bold" textAnchor="middle" letterSpacing="2">
-            MAIN ACCESSIBLE CORRIDOR ({building.code} - {floor.name.toUpperCase()})
-          </text>
+            {/* Central Connecting Corridor */}
+            <rect x="50" y={mapHeight / 2 - 30} width={mapWidth - 100} height="60" fill="#0f172a" stroke="#1e293b" strokeWidth="2" rx="4" />
+            <text x={mapWidth / 2} y={mapHeight / 2 + 5} fill="#475569" fontSize="12" fontWeight="bold" textAnchor="middle" letterSpacing="2">
+              MAIN ACCESSIBLE CORRIDOR ({building.code || 'BLDG'} - {floor.name.toUpperCase()})
+            </text>
 
-          {/* Render Floor Rooms */}
-          {floor.rooms.map((room) => {
-            const rx = (room.x / 100) * 1000;
-            const ry = (room.y / 100) * 600;
-            const rw = (room.width / 100) * 1000;
-            const rh = (room.height / 100) * 600;
-            const colors = getCategoryColor(room.category, room.isAccessible);
-            const isSelected = 
-              (selectedRoomId && selectedRoomId === room.id) || 
-              (selectedRoomName && selectedRoomName === room.name);
+            {/* Render Floor Rooms */}
+            {rooms.map((room) => {
+              const rx = Number.isFinite(room.x) ? room.x : 0;
+              const ry = Number.isFinite(room.y) ? room.y : 0;
+              const rw = Number.isFinite(room.width) ? room.width : 100;
+              const rh = Number.isFinite(room.height) ? room.height : 60;
+              const colors = getCategoryColor(room.category, room.isAccessible);
+              const isSelected = 
+                (selectedRoomId && selectedRoomId === room.id) || 
+                (selectedRoomName && selectedRoomName === room.name);
 
-            return (
-              <g 
-                key={room.id} 
-                className="group cursor-pointer"
-                onClick={(e) => {
-                  e.stopPropagation(); // Stop SVG background handler from firing
-                  const centerX = Math.round(room.x + room.width / 2);
-                  const centerY = Math.round(room.y + room.height / 2);
-                  if (onSelectLocation) {
-                    onSelectLocation({ x: centerX, y: centerY }, room);
-                  }
-                }}
-              >
-                {/* Active Highlight Ring around Room */}
-                {isSelected && (
+              return (
+                <g 
+                  key={room.id || room.name} 
+                  className="group cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation(); // Stop SVG background handler from firing
+                    const centerX = Math.round(rx + rw / 2);
+                    const centerY = Math.round(ry + rh / 2);
+                    if (onSelectLocation) {
+                      onSelectLocation({ x: centerX, y: centerY }, room);
+                    }
+                  }}
+                >
+                  {/* Active Highlight Ring around Room */}
+                  {isSelected && (
+                    <rect
+                      x={rx - 4}
+                      y={ry - 4}
+                      width={rw + 8}
+                      height={rh + 8}
+                      rx="8"
+                      fill="none"
+                      stroke="#38bdf8"
+                      strokeWidth="3"
+                      strokeDasharray="6 4"
+                      className="animate-pulse"
+                    />
+                  )}
+
                   <rect
-                    x={rx - 6}
-                    y={ry - 6}
-                    width={rw + 12}
-                    height={rh + 12}
-                    rx="12"
-                    fill="none"
-                    stroke="#38bdf8"
-                    strokeWidth="3"
-                    strokeDasharray="6 4"
-                    className="animate-pulse"
+                    x={rx}
+                    y={ry}
+                    width={rw}
+                    height={rh}
+                    rx="6"
+                    fill={isSelected ? '#1e3a8a' : colors.fill}
+                    stroke={isSelected ? '#38bdf8' : colors.stroke}
+                    strokeWidth={isSelected ? '3' : '1.5'}
+                    className={`transition-all duration-200 ${isSelected ? 'brightness-125' : 'group-hover:fill-slate-800'}`}
                   />
-                )}
 
-                <rect
-                  x={rx}
-                  y={ry}
-                  width={rw}
-                  height={rh}
-                  rx="8"
-                  fill={isSelected ? '#1e3a8a' : colors.fill}
-                  stroke={isSelected ? '#38bdf8' : colors.stroke}
-                  strokeWidth={isSelected ? '4' : '2'}
-                  className={`transition-all duration-200 ${isSelected ? 'brightness-125' : 'group-hover:fill-slate-800'}`}
-                />
+                  <text
+                    x={rx + rw / 2}
+                    y={ry + rh / 2 - (rh > 40 ? 4 : 0)}
+                    fill={isSelected ? '#60a5fa' : '#f8fafc'}
+                    fontSize={rw < 80 ? '10' : '12'}
+                    fontWeight="bold"
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                  >
+                    {room.name}
+                  </text>
+                  {rh > 40 && (
+                    <text
+                      x={rx + rw / 2}
+                      y={ry + rh / 2 + 12}
+                      fill={isSelected ? '#93c5fd' : colors.text}
+                      fontSize="9"
+                      fontWeight="semibold"
+                      textAnchor="middle"
+                    >
+                      {isSelected ? '★ SELECTED' : (room.isAccessible ? '✓ Accessible' : '⚠️ Limited Access')}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
 
-                <text
-                  x={rx + rw / 2}
-                  y={ry + rh / 2 - 4}
-                  fill={isSelected ? '#60a5fa' : '#f8fafc'}
-                  fontSize="12"
-                  fontWeight="bold"
-                  textAnchor="middle"
-                >
-                  {room.name}
-                </text>
-                <text
-                  x={rx + rw / 2}
-                  y={ry + rh / 2 + 12}
-                  fill={isSelected ? '#93c5fd' : colors.text}
-                  fontSize="10"
-                  fontWeight="semibold"
-                  textAnchor="middle"
-                >
-                  {isSelected ? '★ SELECTED' : (room.isAccessible ? '✓ Accessible' : '⚠️ Limited Access')}
-                </text>
-              </g>
-            );
-          })}
-
-          {/* Render Existing Floor Accessibility Features (Context) */}
-          {features.filter(f => f.buildingId === building.id && f.floorId === floor.floorId).map((feat) => {
-            const fx = (feat.x / 100) * 1000;
-            const fy = (feat.y / 100) * 600;
-            return (
-              <g key={feat.id} transform={`translate(${fx}, ${fy})`} className="opacity-80">
-                <circle r="12" fill={feat.status === 'working' ? '#10b981' : '#ef4444'} stroke="#ffffff" strokeWidth="2" />
-                <text y="3.5" fontSize="10" textAnchor="middle" fill="#ffffff" fontWeight="bold">
-                  {feat.type === 'ramp' ? '♿' : feat.type === 'lift' ? '🛗' : '📍'}
-                </text>
-              </g>
-            );
-          })}
-
-          {/* Selected Location Pin Marker */}
-          {selectedLocation && (
-            <g transform={`translate(${(selectedLocation.x / 100) * 1000}, ${(selectedLocation.y / 100) * 600})`}>
-              <circle r="26" fill="#0284c7" className="animate-ping opacity-75" />
-              <circle r="16" fill="#0284c7" stroke="#ffffff" strokeWidth="3.5" className="shadow-xl" />
-              <text y="4" fill="#ffffff" fontSize="12" fontWeight="bold" textAnchor="middle">📍</text>
-              
-              {/* Pin Label Card */}
-              {selectedRoomName && (
-                <g transform="translate(0, -32)">
-                  <rect x="-80" y="-18" width="160" height="24" rx="6" fill="#0f172a" stroke="#0284c7" strokeWidth="1.5" />
-                  <text x="0" y="-3" fill="#38bdf8" fontSize="10" fontWeight="bold" textAnchor="middle">
-                    {selectedRoomName.length > 22 ? `${selectedRoomName.substring(0, 20)}...` : selectedRoomName}
+            {/* Render Existing Floor Accessibility Features (Context) */}
+            {features.filter(f => f.buildingId === building.id && String(f.floorId) === String(floor.floorId)).map((feat) => {
+              const fx = (feat.x / 100) * mapWidth;
+              const fy = (feat.y / 100) * mapHeight;
+              return (
+                <g key={feat.id} transform={`translate(${fx}, ${fy})`} className="opacity-80">
+                  <circle r="12" fill={feat.status === 'working' ? '#10b981' : '#ef4444'} stroke="#ffffff" strokeWidth="2" />
+                  <text y="3.5" fontSize="10" textAnchor="middle" fill="#ffffff" fontWeight="bold">
+                    {feat.type === 'ramp' ? '♿' : feat.type === 'lift' ? '🛗' : '📍'}
                   </text>
                 </g>
-              )}
-            </g>
-          )}
-        </svg>
+              );
+            })}
+
+            {/* Selected Location Pin Marker */}
+            {selectedLocation && (
+              <g transform={`translate(${selectedLocation.x}, ${selectedLocation.y})`}>
+                <circle r="22" fill="#0284c7" className="animate-ping opacity-75" />
+                <circle r="14" fill="#0284c7" stroke="#ffffff" strokeWidth="3" className="shadow-xl" />
+                <text y="4" fill="#ffffff" fontSize="11" fontWeight="bold" textAnchor="middle">📍</text>
+                
+                {/* Pin Label Card */}
+                {selectedRoomName && (
+                  <g transform="translate(0, -28)">
+                    <rect x="-70" y="-16" width="140" height="22" rx="6" fill="#0f172a" stroke="#0284c7" strokeWidth="1.5" />
+                    <text x="0" y="-2" fill="#38bdf8" fontSize="10" fontWeight="bold" textAnchor="middle">
+                      {selectedRoomName.length > 18 ? `${selectedRoomName.substring(0, 16)}...` : selectedRoomName}
+                    </text>
+                  </g>
+                )}
+              </g>
+            )}
+          </svg>
+        )}
 
         {/* Overlay Instruction Banner if no location selected in picker mode */}
-        {isPickerMode && !selectedLocation && !unmappedError && (
+        {isPickerMode && !selectedLocation && !unmappedError && !isLoading && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-md border border-blue-500/40 px-4 py-2 rounded-xl text-center shadow-lg pointer-events-none flex items-center space-x-2 text-xs">
             <MapPin className="w-4 h-4 text-blue-400 animate-bounce" />
             <span className="text-blue-100 font-semibold">Click on a marked room or location on this floor map</span>
@@ -265,7 +309,7 @@ export const FloorMap: React.FC<FloorMapProps> = ({
         </div>
 
         <span className="text-[11px] text-slate-500 hidden sm:inline">
-          {floor.rooms.length} Mapped Locations on {floor.name}
+          {rooms.length} Mapped Locations on {floor.name}
         </span>
       </div>
     </div>

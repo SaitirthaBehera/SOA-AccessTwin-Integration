@@ -227,7 +227,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* Sub-Tab Navigation inside Admin Panel */}
-      <div className="flex bg-slate-200/80 p-1.5 rounded-2xl max-w-2xl space-x-1 text-xs font-bold">
+      <div className="flex bg-slate-200/80 p-1.5 rounded-2xl max-w-xl space-x-1 text-xs font-bold">
         <button
           id="btn-admin-subtab-audit"
           onClick={() => setAdminSubTab('audit-queue')}
@@ -253,24 +253,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <Lightbulb className="w-4 h-4 text-amber-500" />
           <span>Fix Suggestions (Admin Only)</span>
         </button>
-
-        <button
-          id="btn-admin-subtab-maps"
-          onClick={() => setAdminSubTab('map-ingestion')}
-          className={`flex-1 py-2.5 px-4 rounded-xl transition-all flex items-center justify-center space-x-2 cursor-pointer ${
-            adminSubTab === 'map-ingestion'
-              ? 'bg-white text-purple-700 shadow-sm'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Layers className="w-4 h-4 text-purple-600" />
-          <span>AI Map Ingestion (Supabase)</span>
-        </button>
       </div>
 
-      {adminSubTab === 'map-ingestion' ? (
-        <FloorMapIngestion />
-      ) : adminSubTab === 'fix-suggestions' ? (
+      {adminSubTab === 'fix-suggestions' ? (
         <SmartRecommendations
           recommendations={recommendations}
           onStatusUpdated={onRecommendationStatusUpdated || (() => {})}

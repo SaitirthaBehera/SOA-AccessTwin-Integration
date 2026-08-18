@@ -1,24 +1,19 @@
-import React, { useState } from 'react';
-import { Building, AccessibilityFeature, RouteResult } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Building, AccessibilityFeature, RouteResult, FloorMap, BuildingRoom } from '../types';
 import { FeatureDetailModal } from './FeatureDetailModal';
+import { api } from '../services/api';
 import { 
   ZoomIn, 
   ZoomOut, 
   RotateCcw, 
   Filter, 
   Layers, 
-  CheckCircle, 
-  AlertOctagon, 
   HelpCircle, 
-  XCircle,
-  Eye,
-  Volume2,
-  Accessibility,
   ArrowRight
 } from 'lucide-react';
 
 interface DigitalTwinMapProps {
-  building: Building;
+  building: Building | null;
   features: AccessibilityFeature[];
   activeRoute: RouteResult | null;
   onReportIssueAtLocation?: (buildingId: string, floorId: number, x: number, y: number) => void;
@@ -39,9 +34,109 @@ export const DigitalTwinMap: React.FC<DigitalTwinMapProps> = ({
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
   const [showRouteLayer, setShowRouteLayer] = useState<boolean>(true);
+  const [currentFloorMap, setCurrentFloorMap] = useState<FloorMap | null>(null);
+  const [dynamicFeatures, setDynamicFeatures] = useState<AccessibilityFeature[]>([]);
+  const [rooms, setRooms] = useState<BuildingRoom[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (building && building.floors && building.floors.length > 0) {
+      setSelectedFloorId(building.floors[0].floorId);
+    }
+  }, [building]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+
+    async function loadFloorData() {
+      if (!building) return;
+
+      // If floors not yet populated, keep loading
+      if (!building.floors || building.floors.length === 0) {
+        setIsLoading(true);
+        return;
+      }
+      
+      console.log("[MAP STATE] selectedBuildingId:", building.id);
+      
+      // If building changed, make sure we have a valid floor selected
+      const currentFloorId = selectedFloorId;
+      const floorExists = building.floors.some(f => f.floorId === currentFloorId);
+      const floorToLoad = floorExists ? currentFloorId : (building.floors[0]?.floorId);
+
+      if (floorToLoad === undefined) {
+        setIsLoading(false);
+        setError("No floor data available for this building.");
+        return;
+      }
+
+      // Update state if floor changed
+      if (!floorExists) {
+        console.log("[FLOOR STATE] Auto-selecting floor:", floorToLoad);
+        setSelectedFloorId(floorToLoad);
+        return; // The next effect run will handle the fetch with the correct floor
+      }
+
+      console.log("[FLOOR FETCH] buildingId:", building.id, "floorId:", floorToLoad);
+      setIsLoading(true);
+      setError(null);
+      setCurrentFloorMap(null);
+      setRooms([]);
+      setDynamicFeatures([]);
+      
+      try {
+        // Fetch floor map
+        const floorMap = await api.getFloorMap(building.id, String(floorToLoad));
+        
+        // Fetch rooms
+        console.log("[ROOM FETCH] buildingId:", building.id, "floorId:", floorToLoad);
+        const floorRooms = await api.getRoomsForFloor(String(floorToLoad), building.id);
+        
+        // Fetch accessibility features
+        const floorFeatures = await api.getAccessibilityFeatures(building.id, String(floorToLoad));
+        
+        if (isMounted) {
+          console.log("[FLOOR RESULT] buildingId:", building.id, "floors fetched successfully");
+          setCurrentFloorMap(floorMap);
+          setRooms(floorRooms);
+          setDynamicFeatures(floorFeatures);
+        }
+      } catch (err) {
+        if (isMounted) {
+          console.error('[DEBUG] Failed to load floor data:', err);
+          setError('Failed to load floor map data. Please try again.');
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+    
+    loadFloorData();
+    return () => { isMounted = false; controller.abort(); };
+  }, [building?.id, selectedFloorId]);
+
+  if (!building) {
+    return (
+      <div className="text-center py-20 text-slate-500">
+        Please select a building to view the Digital Twin map.
+      </div>
+    );
+  }
+  
   const currentFloor = building.floors.find(f => f.floorId === selectedFloorId) || building.floors[0];
-  const floorFeatures = features.filter(f => f.floorId === selectedFloorId);
+  const floorFeatures = dynamicFeatures;
+
+  if (!currentFloor) {
+    return (
+      <div className="text-center py-20 text-slate-500">
+        No floor data available for this building.
+      </div>
+    );
+  }
 
   // Filter features
   const filteredFeatures = floorFeatures.filter(f => {
@@ -322,139 +417,182 @@ export const DigitalTwinMap: React.FC<DigitalTwinMapProps> = ({
               style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center center', transition: 'transform 0.2s ease-out' }}
               className="w-full max-w-[900px] aspect-[10/6] relative bg-slate-900 rounded-xl border border-slate-800 shadow-2xl p-2 select-none"
             >
-              <svg
-                viewBox="0 0 1000 600"
-                className="w-full h-full cursor-crosshair"
-                onClick={handleFloorPlanClick}
-              >
-                {/* Background Grid */}
-                <defs>
-                  <pattern id="gridPattern" width="40" height="40" patternUnits="userSpaceOnUse">
-                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" strokeWidth="1" />
-                  </pattern>
-                </defs>
-                <rect width="1000" height="600" fill="url(#gridPattern)" />
+              {isLoading ? (
+                <div className="text-white flex items-center justify-center h-full">Loading floor map...</div>
+              ) : error ? (
+                <div className="text-rose-500 flex items-center justify-center h-full p-4 text-center">
+                  {error}
+                </div>
+              ) : currentFloorMap ? (
+                <svg
+                  viewBox={`0 0 ${currentFloorMap.width} ${currentFloorMap.height}`}
+                  className="w-full h-full cursor-crosshair"
+                  onClick={handleFloorPlanClick}
+                >
+                  {/* Reconstructed Floor Plan Layout */}
+                  {rooms.map((room, index) => {
+                    // Diagnostic and validation
+                    const x = Number.isFinite(room.x) ? room.x : 0;
+                    const y = Number.isFinite(room.y) ? room.y : 0;
+                    const width = Number.isFinite(room.width) ? room.width : 10;
+                    const height = Number.isFinite(room.height) ? room.height : 10;
 
-                {/* Building Outer Wall */}
-                <rect x="20" y="20" width="960" height="560" rx="12" fill="none" stroke="#334155" strokeWidth="6" />
-
-                {/* Central Corridor */}
-                <rect x="50" y="270" width="900" height="60" fill="#0f172a" stroke="#1e293b" strokeWidth="2" />
-                <text x="500" y="305" fill="#475569" fontSize="12" fontWeight="bold" textAnchor="middle" letterSpacing="2">
-                  MAIN ACCESSIBLE CORRIDOR (WIDTH: 2.2M)
-                </text>
-
-                {/* Render Rooms */}
-                {currentFloor.rooms.map((room) => {
-                  const rx = (room.x / 100) * 1000;
-                  const ry = (room.y / 100) * 600;
-                  const rw = (room.width / 100) * 1000;
-                  const rh = (room.height / 100) * 600;
-
-                  return (
-                    <g key={room.id} className="group cursor-pointer">
-                      <rect
-                        x={rx}
-                        y={ry}
-                        width={rw}
-                        height={rh}
-                        rx="8"
-                        fill={room.isAccessible ? '#1e293b' : '#311b1b'}
-                        stroke={room.isAccessible ? '#3b82f6' : '#ef4444'}
-                        strokeWidth="2"
-                        className="transition-colors group-hover:fill-slate-800"
-                      />
-                      {/* Room Label */}
-                      <text
-                        x={rx + rw / 2}
-                        y={ry + rh / 2 - 4}
-                        fill="#f8fafc"
-                        fontSize="13"
-                        fontWeight="bold"
-                        textAnchor="middle"
+                    console.log("MAP TRANSFORM DEBUG (Room)", {
+                      name: room.name,
+                      x,
+                      y,
+                      width,
+                      height
+                    });
+                    return (
+                      <g
+                        key={`room-${index}`}
+                        className="cursor-pointer group"
+                        onClick={() => console.log('Room clicked:', room.name)}
                       >
-                        {room.name}
-                      </text>
-                      <text
-                        x={rx + rw / 2}
-                        y={ry + rh / 2 + 14}
-                        fill={room.isAccessible ? '#60a5fa' : '#f87171'}
-                        fontSize="10"
-                        fontWeight="semibold"
-                        textAnchor="middle"
-                      >
-                        {room.isAccessible ? 'Accessible Room' : '⚠️ Limited Access'}
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {/* Active Navigation Route Layer Overlay */}
-                {showRouteLayer && activeRoute && activeRoute.pathNodeIds.length > 1 && (
-                  <g className="animate-in fade-in duration-300">
-                    {/* Draw route lines connecting floor nodes */}
-                    <path
-                      d="M 120 270 L 320 270 L 520 270 L 720 180"
-                      fill="none"
-                      stroke="#38bdf8"
-                      strokeWidth="6"
-                      strokeDasharray="8 8"
-                      strokeLinecap="round"
-                      className="animate-pulse"
-                    />
-                  </g>
-                )}
-
-                {/* Render Interactive Accessibility Markers */}
-                {filteredFeatures.map((feat) => {
-                  const mx = (feat.x / 100) * 1000;
-                  const my = (feat.y / 100) * 600;
-                  const style = getMarkerStyle(feat.status, feat.verificationStatus);
-
-                  return (
-                    <g
-                      key={feat.id}
-                      transform={`translate(${mx}, ${my})`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedFeature(feat);
-                      }}
-                      className="cursor-pointer group"
-                    >
-                      {/* Pulse Ring for Barriers */}
-                      {feat.status === 'broken' && (
-                        <circle r="22" fill="none" stroke="#ef4444" strokeWidth="2" className="animate-ping opacity-75" />
-                      )}
-
-                      {/* Marker Outer Circle */}
-                      <circle
-                        r="16"
-                        className={`${style.bg} stroke-2 stroke-white shadow-lg transition-transform group-hover:scale-125`}
-                      />
-
-                      {/* Icon inside marker */}
-                      <text
-                        y="4"
-                        fontSize="12"
-                        textAnchor="middle"
-                        fill="#ffffff"
-                        fontWeight="bold"
-                        pointerEvents="none"
-                      >
-                        {feat.type === 'ramp' ? '♿' : feat.type === 'lift' ? '🛗' : feat.type === 'toilet' ? '🚻' : feat.type === 'stairs' ? '🪜' : '📍'}
-                      </text>
-
-                      {/* Tooltip on hover */}
-                      <g className="opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                        <rect x="-70" y="-45" width="140" height="26" rx="6" fill="#0f172a" stroke="#475569" strokeWidth="1" />
-                        <text x="0" y="-28" fill="#f8fafc" fontSize="10" fontWeight="bold" textAnchor="middle">
-                          {feat.name}
+                        <rect
+                          x={x}
+                          y={y}
+                          width={width}
+                          height={height}
+                          fill={room.isAccessible ? "#334155" : "#1e293b"}
+                          stroke="#475569"
+                          strokeWidth="2"
+                          className="transition-colors group-hover:fill-blue-800"
+                        />
+                        <text
+                          x={x + width / 2}
+                          y={y + height / 2}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fontSize="14"
+                          fill="#cbd5e1"
+                          className="pointer-events-none select-none"
+                        >
+                          {room.name}
                         </text>
                       </g>
+                    );
+                  })}
+
+                  {/* Active Navigation Route Layer Overlay */}
+                  {showRouteLayer && activeRoute && activeRoute.pathNodeIds.length > 1 && (
+                    <g key="route-layer" className="animate-in fade-in duration-300">
+                      {/* Draw route lines connecting floor nodes */}
+                      <path
+                        d="M 120 270 L 320 270 L 520 270 L 720 180"
+                        fill="none"
+                        stroke="#38bdf8"
+                        strokeWidth="6"
+                        strokeDasharray="8 8"
+                        strokeLinecap="round"
+                        className="animate-pulse"
+                      />
                     </g>
-                  );
-                })}
-              </svg>
+                  )}
+
+                  {/* Render Interactive Accessibility Markers */}
+                  {filteredFeatures.map((feat) => {
+                    // Fallback to 1600x800 if map dimensions are missing, to avoid NaN
+                    const mapWidth = (currentFloorMap && Number.isFinite(currentFloorMap.width) && currentFloorMap.width > 0) ? currentFloorMap.width : 1600;
+                    const mapHeight = (currentFloorMap && Number.isFinite(currentFloorMap.height) && currentFloorMap.height > 0) ? currentFloorMap.height : 800;
+                    
+                    const mx = feat.x;
+                    const my = feat.y;
+                    
+                    console.log("MAP TRANSFORM DEBUG (Marker)", {
+                      featId: feat.id,
+                      x: feat.x,
+                      y: feat.y,
+                      mx,
+                      my
+                    });
+
+                    const style = getMarkerStyle(feat.status, feat.verificationStatus);
+
+                    return (
+                      <g
+                        key={`feat-${feat.id}-${feat.floorId}`}
+                        transform={`translate(${Number.isFinite(mx) ? mx : 0}, ${Number.isFinite(my) ? my : 0})`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedFeature(feat);
+                        }}
+                        className="cursor-pointer group"
+                      >
+                        {feat.status === 'temporary' ? (
+                          <>
+                            {/* Temporary marker */}
+                            <circle r="48" fill="#fef3c7" stroke="#f59e0b" strokeWidth="3" />
+                            <path
+                              d="M0 -25 L25 20 L-25 20 Z"
+                              fill="#fef08a"
+                              stroke="#b45309"
+                              strokeWidth="2"
+                              transform="translate(0, -5)"
+                            />
+                            <text
+                              y="10"
+                              fontSize="24"
+                              textAnchor="middle"
+                              fill="#78350f"
+                              fontWeight="bold"
+                              pointerEvents="none"
+                            >
+                              !
+                            </text>
+                            <text
+                              y="70"
+                              fontSize="14"
+                              textAnchor="middle"
+                              fill="#b45309"
+                              fontWeight="bold"
+                              pointerEvents="none"
+                            >
+                              Temporarily Unavailable
+                            </text>
+                          </>
+                        ) : (
+                          <>
+                            {/* Pulse Ring for Barriers */}
+                            {feat.status === 'broken' && (
+                              <circle key="pulse" r="66" fill="none" stroke="#ef4444" strokeWidth="2" className="animate-ping opacity-75" />
+                            )}
+
+                            {/* Marker Outer Circle */}
+                            <circle
+                              r="48"
+                              className={`${style.bg} stroke-2 stroke-white shadow-lg transition-transform group-hover:scale-125`}
+                            />
+
+                            {/* Icon inside marker */}
+                            <text
+                              y="12"
+                              fontSize="36"
+                              textAnchor="middle"
+                              fill="#ffffff"
+                              fontWeight="bold"
+                              pointerEvents="none"
+                            >
+                              {feat.type === 'ramp' ? '♿' : feat.type === 'lift' ? '🛗' : feat.type === 'toilet' ? '🚻' : feat.type === 'stairs' ? '🪜' : '📍'}
+                            </text>
+
+                            {/* Tooltip on hover */}
+                            <g className="opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                              <rect x="-70" y="-45" width="140" height="26" rx="6" fill="#0f172a" stroke="#475569" strokeWidth="1" />
+                              <text x="0" y="-28" fill="#f8fafc" fontSize="10" fontWeight="bold" textAnchor="middle">
+                                {feat.name}
+                              </text>
+                            </g>
+                          </>
+                        )}
+                      </g>
+                    );
+                  })}
+                </svg>
+              ) : (
+                <div className="text-white flex items-center justify-center h-full">Floor map unavailable for this floor.</div>
+              )}
             </div>
           </div>
 
