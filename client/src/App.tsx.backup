@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Session } from '@supabase/supabase-js';
 import { Building, AccessibilityFeature, AccessibilityReport, Recommendation, RouteResult } from './types';
 import { api } from './services/api';
 import { supabase, isSupabaseConfigured, signOutAdminFromSupabase, checkIsAdminUser } from './lib/supabase';
@@ -12,67 +11,10 @@ import { AiDetection } from './components/AiDetection';
 import { AccessibleNavigation } from './components/AccessibleNavigation';
 import { AdminDashboard } from './components/AdminDashboard';
 import { BuildingScoreCard } from './components/BuildingScoreCard';
-import { TwinGramPage } from './components/TwinGramPage';
-import { TwinGramPostDetail } from './components/TwinGramPostDetail';
 import { HowItWorksModal } from './components/HowItWorksModal';
-import { AuthModal } from './components/AuthModal';
-import { ProfilePage } from './components/ProfilePage';
-import { getDefaultAvatarUrl } from './lib/avatar';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [sharedPostId, setSharedPostId] = useState<string | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<any>(null);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-
-  useEffect(() => {
-    const path = window.location.pathname;
-    if (path.startsWith('/twingram/post/')) {
-      const postId = path.split('/')[3];
-      if (postId) {
-        setSharedPostId(postId);
-        setActiveTab('twingram');
-      }
-    }
-  }, []);
-
-  const fetchProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-    
-    if (data) {
-      if (!data.avatar_url) {
-        const defaultUrl = getDefaultAvatarUrl();
-        await supabase
-          .from('user_profiles')
-          .update({ avatar_url: defaultUrl })
-          .eq('id', userId);
-        setProfile({ ...data, avatar_url: defaultUrl });
-      } else {
-        setProfile(data);
-      }
-    }
-  };
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session?.user?.id) fetchProfile(session.user.id);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session?.user?.id) fetchProfile(session.user.id);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [homeBuildings, setHomeBuildings] = useState<Building[]>([]);
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
@@ -83,7 +25,6 @@ export default function App() {
   const [accessibilityFeaturesCount, setAccessibilityFeaturesCount] = useState<number>(0);
   const [adminReportsCount, setAdminReportsCount] = useState<number>(0);
   const [verifiedReportsCount, setVerifiedReportsCount] = useState<number>(0);
-  const [twingramPosts, setTwingramPosts] = useState<any[]>([]);
 
   const [prefilledLocation, setPrefilledLocation] = useState<{ buildingId: string; floorId: number; x: number; y: number } | null>(null);
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState<boolean>(false);
@@ -126,32 +67,19 @@ export default function App() {
     }
   }, []);
 
-  const handleLoginAdmin = async () => {
-    // If a normal user is logged in, sign them out first
-    if (session) {
-      await supabase.auth.signOut();
-      // App.tsx state will update automatically via onAuthStateChange listener
-      setSession(null);
-      setProfile(null);
-    }
+  const handleLoginAdmin = () => {
     setIsAdminLoggedIn(true);
   };
 
   const handleLogoutAdmin = async () => {
     await signOutAdminFromSupabase();
     setIsAdminLoggedIn(false);
-    
-    // Explicitly clear any stale session/profile data
-    setSession(null);
-    setProfile(null);
-    
-    setActiveTab('dashboard');
+    setActiveTab('admin');
   };
 
   // Load initial data
   useEffect(() => {
     async function loadInitialData() {
-      // 1. Fetch buildings essential for the dashboard
       const sBuildings = await api.getSupabaseBuildings();
       const bList = await api.getBuildings();
       
@@ -159,25 +87,24 @@ export default function App() {
       
       if (allBuildings.length > 0) {
         setBuildings(allBuildings);
-        setHomeBuildings(sBuildings || []);
-        
-        // Select first building if none selected
-        if (!selectedBuilding) {
-          setSelectedBuilding(allBuildings[0]);
-        }
       }
       
-      // 2. Fetch other data asynchronously (not blocking the initial building load)
-      Promise.all([
-        api.getReports().then(r => r && setReports(r)),
-        api.getRecommendations().then(r => r && setRecommendations(r)),
-        api.getAccessibilityFeaturesCount().then(setAccessibilityFeaturesCount),
-        api.getAdminReportsCount().then(count => {
-          setAdminReportsCount(count);
-          api.getReportsCount().then(total => setVerifiedReportsCount(Math.max(0, total - count)));
-        }),
-        api.getTwinGramPosts().then(posts => setTwingramPosts(posts))
-      ]).catch(err => console.error('Error loading non-essential data:', err));
+      setHomeBuildings(sBuildings || []);
+      
+      const rList = await api.getReports();
+      if (rList) setReports(rList);
+
+      const recList = await api.getRecommendations();
+      if (recList) setRecommendations(recList);
+
+      const count = await api.getAccessibilityFeaturesCount();
+      setAccessibilityFeaturesCount(count);
+
+      const adminCount = await api.getAdminReportsCount();
+      setAdminReportsCount(adminCount);
+
+      const totalReportsCount = await api.getReportsCount();
+      setVerifiedReportsCount(Math.max(0, totalReportsCount - adminCount));
     }
     loadInitialData();
   }, []);
@@ -276,10 +203,6 @@ export default function App() {
     }
   };
 
-  const handleUpdatePostStatus = (postId: string, status: 'verified' | 'fake') => {
-    setTwingramPosts(prev => prev.map(p => p.id === postId ? { ...p, verification_status: status } : p));
-  };
-
   const handleReportResolved = (reportId: string) => {
     setReports(prev => prev.map(r => {
       if (r.id === reportId) {
@@ -376,26 +299,10 @@ export default function App() {
         onLogoutAdmin={handleLogoutAdmin}
         onSelectBuilding={handleSelectBuilding}
         selectedBuildingId={selectedBuilding?.id || null}
-        buildings={buildings}
-        session={session}
-        profile={profile}
-        onOpenAuth={() => setShowAuthModal(true)}
       />
 
       {/* Main Content Viewport Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'profile' && session && (
-          <ProfilePage user={session.user} profile={profile} refreshProfile={() => fetchProfile(session.user.id)} isAdmin={isAdminLoggedIn} />
-        )}
-
-        {activeTab === 'twingram' && (
-          sharedPostId ? (
-            <TwinGramPostDetail postId={sharedPostId} session={session} onOpenAuth={() => setShowAuthModal(true)} isAdmin={isAdminLoggedIn} />
-          ) : (
-            <TwinGramPage session={session} onOpenAuth={() => setShowAuthModal(true)} isAdmin={isAdminLoggedIn} />
-          )
-        )}
-
         {activeTab === 'dashboard' && (
           <HomeDashboard
             buildings={buildings}
@@ -453,11 +360,9 @@ export default function App() {
             reports={reports}
             buildings={buildings}
             recommendations={recommendations}
-            twingramPosts={twingramPosts}
             onReportVerified={handleReportVerified}
             onReportResolved={handleReportResolved}
             onRecommendationStatusUpdated={handleRecommendationStatusUpdated}
-            onUpdatePostStatus={handleUpdatePostStatus}
             isAdminLoggedIn={isAdminLoggedIn}
             onLoginAdmin={handleLoginAdmin}
             onLogoutAdmin={handleLogoutAdmin}
@@ -471,16 +376,30 @@ export default function App() {
             reports={reports}
             buildings={buildings}
             recommendations={recommendations}
-            twingramPosts={twingramPosts}
             onReportVerified={handleReportVerified}
             onReportResolved={handleReportResolved}
             onRecommendationStatusUpdated={handleRecommendationStatusUpdated}
-            onUpdatePostStatus={handleUpdatePostStatus}
             isAdminLoggedIn={isAdminLoggedIn}
             onLoginAdmin={handleLoginAdmin}
             onLogoutAdmin={handleLogoutAdmin}
             onCancelLogin={() => setActiveTab('dashboard')}
             defaultSubTab="fix-suggestions"
+          />
+        )}
+
+        {activeTab === 'score' && selectedBuilding && (
+          <BuildingScoreCard
+            building={selectedBuilding}
+            allBuildings={buildings}
+            onSelectBuilding={(b) => setSelectedBuilding(b)}
+            isAdminLoggedIn={isAdminLoggedIn}
+            onNavigateToRecommendations={() => {
+              if (isAdminLoggedIn) {
+                setActiveTab('recommendations');
+              } else {
+                setActiveTab('admin');
+              }
+            }}
           />
         )}
       </main>
@@ -493,8 +412,6 @@ export default function App() {
         isOpen={isHowItWorksOpen}
         onClose={() => setIsHowItWorksOpen(false)}
       />
-      {/* Auth Modal */}
-      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </div>
   );
 }

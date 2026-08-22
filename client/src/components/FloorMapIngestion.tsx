@@ -229,7 +229,7 @@ export const FloorMapIngestion: React.FC = () => {
             </div>
 
             <div className="h-64 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-center overflow-hidden">
-              {previewUrl ? (
+              {previewUrl && previewUrl.length > 0 ? (
                 <img 
                   src={previewUrl} 
                   alt="Floor Blueprint Preview" 

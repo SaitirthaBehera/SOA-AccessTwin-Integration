@@ -13,7 +13,7 @@ export type FeatureType =
   | 'obstacle' 
   | 'other';
 
-export type FeatureStatus = 'working' | 'broken' | 'not_available' | 'under_maintenance' | 'temporary';
+export type FeatureStatus = 'working' | 'broken' | 'not_available' | 'under_maintenance' | 'temporary' | 'present' | 'none';
 
 export type VerificationStatus = 'unverified' | 'community_verified' | 'admin_verified' | 'verified' | 'rejected';
 
@@ -131,7 +131,7 @@ export interface AiDetectionResult {
 export interface NavigationNode {
   id: string;
   buildingId: string;
-  floorId: number;
+  floorId: number | string;
   name: string;
   x: number;
   y: number;
@@ -156,7 +156,7 @@ export interface NavigationEdge {
 export interface RouteStep {
   stepNumber: number;
   instruction: string;
-  floorId: number;
+  floorId: number | string;
   floorName: string;
   distanceMeters: number;
   featureTypeUsed?: FeatureType;
@@ -179,7 +179,7 @@ export interface RouteResult {
 export interface FloorMap {
   mapId: string;
   buildingId: string;
-  floorId: string;
+  floorId: string | number;
   imageUrl: string;
   width: number;
   height: number;

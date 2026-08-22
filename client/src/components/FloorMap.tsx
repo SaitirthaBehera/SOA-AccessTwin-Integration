@@ -80,13 +80,39 @@ export const FloorMap: React.FC<FloorMapProps> = ({
     const rawX = ((e.clientX - rect.left) / rect.width) * mapWidth;
     const rawY = ((e.clientY - rect.top) / rect.height) * mapHeight;
 
-    // Find if click falls inside any room bounding box
-    const foundRoom = rooms.find(
-      r => rawX >= r.x && rawX <= (r.x + r.width) && 
-           rawY >= r.y && rawY <= (r.y + r.height)
-    ) || null;
+    const clickedPoint = { x: Math.round(rawX), y: Math.round(rawY) };
 
-    onSelectLocation({ x: Math.round(rawX), y: Math.round(rawY) }, foundRoom);
+    // Find if click falls inside any room bounding box or find nearest room
+    let resolvedRoom: BuildingRoom | null = null;
+    if (rooms && rooms.length > 0) {
+      // 1. Check if inside any mapped room
+      const insideRoom = rooms.find(
+        r => rawX >= r.x && rawX <= (r.x + r.width) && 
+             rawY >= r.y && rawY <= (r.y + r.height)
+      );
+
+      if (insideRoom) {
+        resolvedRoom = insideRoom;
+      } else {
+        // 2. Fallback to nearest mapped room by boundary distance
+        let minDistance = Infinity;
+        for (const r of rooms) {
+          const rx = Number.isFinite(r.x) ? r.x : 0;
+          const ry = Number.isFinite(r.y) ? r.y : 0;
+          const rw = Number.isFinite(r.width) ? r.width : 100;
+          const rh = Number.isFinite(r.height) ? r.height : 60;
+          const closestX = Math.max(rx, Math.min(rawX, rx + rw));
+          const closestY = Math.max(ry, Math.min(rawY, ry + rh));
+          const dist = Math.hypot(rawX - closestX, rawY - closestY);
+          if (dist < minDistance) {
+            minDistance = dist;
+            resolvedRoom = r;
+          }
+        }
+      }
+    }
+
+    onSelectLocation(clickedPoint, resolvedRoom);
   };
 
   const getCategoryColor = (category: string, isAccessible: boolean) => {
@@ -178,14 +204,6 @@ export const FloorMap: React.FC<FloorMapProps> = ({
                 <g 
                   key={room.id || room.name} 
                   className="group cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation(); // Stop SVG background handler from firing
-                    const centerX = Math.round(rx + rw / 2);
-                    const centerY = Math.round(ry + rh / 2);
-                    if (onSelectLocation) {
-                      onSelectLocation({ x: centerX, y: centerY }, room);
-                    }
-                  }}
                 >
                   {/* Active Highlight Ring around Room */}
                   {isSelected && (

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Building, AccessibilityReport } from '../types';
+import { HomeBuildingDropdown, SupabaseBuildingRow } from './HomeBuildingDropdown';
 import { 
   Building2, 
   Map, 
@@ -10,8 +11,6 @@ import {
   ShieldCheck, 
   Search, 
   ArrowRight, 
-  Activity, 
-  Layers, 
   TrendingUp,
   Award,
   Sparkles
@@ -42,9 +41,28 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
 
-  if (!selectedBuilding) {
-    return <div className="text-center p-8 text-slate-500">Loading building data...</div>;
-  }
+  const handleDropdownSelect = (buildingId: string, row?: SupabaseBuildingRow) => {
+    // Try to find the full building object from homeBuildings only
+    const matchedBuilding = homeBuildings.find(b => String(b.id) === String(buildingId));
+    if (matchedBuilding) {
+      onSelectBuilding(matchedBuilding);
+    } else if (row) {
+      // Create building object if needed
+      const bObj: Building = {
+        id: String(row.building_id || row.id || buildingId),
+        name: row.building_name || row.name || 'Building',
+        code: row.building_code || 'BLDG',
+        campus: row.campus || 'Main Campus',
+        address: row.address || '',
+        floorsCount: Number(row.floors_count || 1),
+        overallScore: Number(row.overall_score || 90),
+        imageUrl: row.image_url || 'https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&q=80&w=800',
+        description: row.description || '',
+        floors: []
+      };
+      onSelectBuilding(bObj);
+    }
+  };
 
   const filteredBuildings = homeBuildings.filter(b => 
     b.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -184,29 +202,33 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             <p className="text-xs text-slate-500">Select a building to view its digital twin map and accessibility score.</p>
           </div>
 
-          <div className="relative max-w-xs w-full">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              id="input-search-buildings"
-              type="text"
-              placeholder="Search SOA building..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <HomeBuildingDropdown
+              selectedBuildingId={selectedBuilding?.id}
+              onSelectBuildingId={handleDropdownSelect}
             />
+
+            <div className="relative max-w-xs w-full">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                id="input-search-buildings"
+                type="text"
+                placeholder="Search SOA building..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              />
+            </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {filteredBuildings.map(building => {
-            const isSelected = building.id === selectedBuilding.id;
+            const isSelected = selectedBuilding && building.id === selectedBuilding.id;
             return (
-                <div
+              <div
                 key={building.id}
-                onClick={() => {
-                  onSelectBuilding(building);
-                  onNavigateToTab('digital-twin');
-                }}
+                onClick={() => onSelectBuilding(building)}
                 className={`group rounded-2xl border transition-all cursor-pointer overflow-hidden flex flex-col ${
                   isSelected
                     ? 'border-blue-600 ring-2 ring-blue-500/20 bg-blue-50/20 shadow-md'
@@ -230,21 +252,37 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
                 <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
                   <div className="space-y-1">
-                    <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider">{building.code}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider">{building.code}</span>
+                      {building.campus && (
+                        <span className="text-[10px] font-medium text-slate-400">{building.campus}</span>
+                      )}
+                    </div>
                     <h4 className="text-base font-bold text-slate-900 leading-snug group-hover:text-blue-600 transition-colors">
                       {building.name}
                     </h4>
-                    <p className="text-xs text-slate-500 line-clamp-2">{building.description}</p>
+                    {building.address && (
+                      <p className="text-[11px] text-slate-400 font-medium truncate">{building.address}</p>
+                    )}
+                    {building.description && (
+                      <p className="text-xs text-slate-500 line-clamp-2">{building.description}</p>
+                    )}
                   </div>
 
                   <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
                     <span className="text-slate-500">{building.floorsCount} Floors Digitalized</span>
-                    <div
-                      className="text-blue-600 hover:text-blue-700 font-bold flex items-center space-x-1"
+                    <button
+                      id={`btn-select-building-${building.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectBuilding(building);
+                        onNavigateToTab('digital-twin');
+                      }}
+                      className="text-blue-600 hover:text-blue-700 font-bold flex items-center space-x-1 cursor-pointer"
                     >
                       <span>Open Twin</span>
                       <ArrowRight className="w-3.5 h-3.5" />
-                    </div>
+                    </button>
                   </div>
                 </div>
               </div>

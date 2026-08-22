@@ -4,6 +4,7 @@ import { api, isRealUserUploadedImage } from '../services/api';
 import { AdminLogin } from './AdminLogin';
 import { SmartRecommendations } from './SmartRecommendations';
 import { FloorMapIngestion } from './FloorMapIngestion';
+import { TwinGramVerificationManager } from './TwinGramVerificationManager';
 import { 
   ShieldAlert, 
   CheckCircle2, 
@@ -44,30 +45,34 @@ interface AdminDashboardProps {
   reports: AccessibilityReport[];
   buildings: Building[];
   recommendations: Recommendation[];
+  twingramPosts: any[];
   onReportVerified: (reportId: string, status: 'admin_verified' | 'rejected', notes?: string) => void;
   onReportResolved?: (reportId: string) => void;
   onRecommendationStatusUpdated?: (recId: string, newStatus: 'Pending' | 'In Progress' | 'Completed', reportId?: string) => void;
+  onUpdatePostStatus: (postId: string, status: 'verified' | 'fake') => void;
   isAdminLoggedIn: boolean;
   onLoginAdmin: () => void;
   onLogoutAdmin: () => void;
   onCancelLogin?: () => void;
-  defaultSubTab?: 'audit-queue' | 'fix-suggestions' | 'map-ingestion';
+  defaultSubTab?: 'audit-queue' | 'fix-suggestions' | 'map-ingestion' | 'twingram-verification';
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   reports,
   buildings,
   recommendations,
+  twingramPosts,
   onReportVerified,
   onReportResolved,
   onRecommendationStatusUpdated,
+  onUpdatePostStatus,
   isAdminLoggedIn,
   onLoginAdmin,
   onLogoutAdmin,
   onCancelLogin,
   defaultSubTab = 'audit-queue'
 }) => {
-  const [adminSubTab, setAdminSubTab] = useState<'audit-queue' | 'fix-suggestions' | 'map-ingestion'>(defaultSubTab);
+  const [adminSubTab, setAdminSubTab] = useState<'audit-queue' | 'fix-suggestions' | 'map-ingestion' | 'twingram-verification'>(defaultSubTab);
   const [selectedBlockId, setSelectedBlockId] = useState<string>('all');
   const [filterState, setFilterState] = useState<string>('active');
   const [adminNotes, setAdminNotes] = useState<{ [id: string]: string }>({});

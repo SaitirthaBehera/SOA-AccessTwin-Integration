@@ -173,7 +173,7 @@ export async function signInAdminWithSupabase(email: string, password: string): 
     }
 
     // Verify that the authenticated account has authorized admin privileges
-    const isAdmin = await checkIsAdminUser(data.user.id, data.user.email);
+    const isAdmin = await checkIsAdminUser();
     if (!isAdmin) {
       await supabase.auth.signOut();
       return {
@@ -189,41 +189,25 @@ export async function signInAdminWithSupabase(email: string, password: string): 
 }
 
 /**
- * Verifies if a given Supabase User ID or email is an authorized administrator
+ * Verifies if a given Supabase User is an authorized administrator
+ * by invoking the secure public.is_authenticated_user_admin RPC.
  */
-export async function checkIsAdminUser(userId: string, email?: string | null): Promise<boolean> {
-  if (!isSupabaseConfigured() || !userId) return false;
+export async function checkIsAdminUser(): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
 
   try {
-    // 1. Check admin_users table in Supabase
-    const { data, error } = await supabase
-      .from('admin_users')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (!error && data) {
-      return true;
+    const { data, error } = await supabase.rpc('is_authenticated_user_admin');
+    
+    if (error) {
+      console.warn('Admin check via RPC failed:', error);
+      return false;
     }
-
-    // 2. Check auth metadata role
-    const { data: userData } = await supabase.auth.getUser();
-    if (
-      userData?.user?.app_metadata?.role === 'admin' ||
-      userData?.user?.user_metadata?.role === 'admin'
-    ) {
-      return true;
-    }
-
-    // 3. User authenticated via Supabase Auth
-    if (userData?.user?.id === userId) {
-      return true;
-    }
+    
+    return !!data;
   } catch (e) {
     console.warn('Admin check verification warning:', e);
+    return false;
   }
-
-  return false;
 }
 
 /**

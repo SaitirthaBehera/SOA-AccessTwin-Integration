@@ -426,53 +426,36 @@ export const AccessibleNavigation: React.FC<AccessibleNavigationProps> = ({
               {(() => {
                 let voiceText = activeFastApiRoute.voice_guidance || activeFastApiRoute.voice_navigation;
                 
-                // If not already formatted as natural voice, build smooth single-sentence with distance
-                if (!voiceText || voiceText.includes('Step 1: Proceed from') || voiceText.includes('Head from')) {
+                // If it contains robotic "Step 1: Proceed from...", condense into minimal human phrasing
+                if (!voiceText || voiceText.includes('Step 1: Proceed from') || voiceText.length > 250) {
                   const startClean = getLocationLabel(activeFastApiRoute.start_location).replace(/\(.*?\)/g, '').replace(/Block\s+[A-Z]\s*[-—–]\s*/gi, '').trim();
                   const endClean = getLocationLabel(activeFastApiRoute.end_location).replace(/\(.*?\)/g, '').replace(/Block\s+[A-Z]\s*[-—–]\s*/gi, '').trim();
-                  const totalDist = activeFastApiRoute.total_distance_meters || 0;
-                  const estMins = activeFastApiRoute.estimated_time_minutes || Math.max(1, Math.round(totalDist / 60));
 
-                  const intermediateActions: string[] = [];
-                  const pathNodes = activeFastApiRoute.path_nodes || [];
-                  const pastLandmarks: string[] = [];
-
-                  for (let i = 1; i < pathNodes.length - 1; i++) {
-                    const nodeId = pathNodes[i].toLowerCase();
-                    const nodeLabel = getLocationLabel(pathNodes[i]).replace(/\(.*?\)/g, '').trim();
-
-                    if (nodeId.includes('lift') || nodeId.includes('elevator')) {
-                      // Check if lift transition
-                      const liftStr = nodeId.includes('lift1') ? 'Lift 1' : nodeId.includes('lift2') ? 'Lift 2' : 'the elevator';
-                      const act = `take ${liftStr}`;
-                      if (!intermediateActions.includes(act)) intermediateActions.push(act);
-                    } else if (nodeId.includes('bridge') || nodeId.includes('passage')) {
-                      const bridgeStr = 'cross the connecting skybridge';
-                      if (!intermediateActions.includes(bridgeStr)) intermediateActions.push(bridgeStr);
-                    } else if (nodeId.includes('roundabout')) {
-                      intermediateActions.push('continue through the Central Campus Roundabout');
-                    } else if (nodeId.startsWith('block_a') || nodeId.startsWith('block_b') || nodeId.startsWith('block_c') || nodeId.startsWith('block_d') || nodeId.startsWith('block_e')) {
-                      const cleanLm = nodeLabel.replace(/ Entrance/gi, '').replace(/ Gate/gi, '').trim();
-                      if (cleanLm && !pastLandmarks.includes(cleanLm)) {
-                        pastLandmarks.push(cleanLm);
-                      }
+                  const conciseSteps: string[] = [];
+                  const rawList = activeFastApiRoute.step_by_step_directions || [];
+                  
+                  for (const s of rawList) {
+                    const lower = s.toLowerCase();
+                    if (lower.includes('elevator') || lower.includes('lift')) {
+                      const matchFloor = s.match(/floor\s+(\d+)/i);
+                      const targetFl = matchFloor ? `Floor ${matchFloor[1]}` : (lower.includes('ground') ? 'Ground Floor' : 'your target floor');
+                      const liftStr = `Take the elevator to ${targetFl}.`;
+                      if (!conciseSteps.includes(liftStr)) conciseSteps.push(liftStr);
+                    } else if (lower.includes('bridge') || lower.includes('passage')) {
+                      const matchB = s.match(/block\s+([a-e])/i);
+                      const bName = matchB ? `Block ${matchB[1].toUpperCase()}` : 'the connecting building';
+                      const bridgeStr = `Cross the bridge to ${bName}.`;
+                      if (!conciseSteps.includes(bridgeStr)) conciseSteps.push(bridgeStr);
+                    } else if (lower.includes('stairs')) {
+                      const stairsStr = `Take the stairs.`;
+                      if (!conciseSteps.includes(stairsStr)) conciseSteps.push(stairsStr);
                     }
                   }
 
-                  if (pastLandmarks.length > 0) {
-                    if (pastLandmarks.length === 1) {
-                      intermediateActions.unshift(`proceed past ${pastLandmarks[0]}`);
-                    } else if (pastLandmarks.length === 2) {
-                      intermediateActions.unshift(`proceed past ${pastLandmarks[0]} and ${pastLandmarks[1]}`);
-                    } else {
-                      intermediateActions.unshift(`proceed past ${pastLandmarks.slice(0, -1).join(', ')}, and ${pastLandmarks[pastLandmarks.length - 1]}`);
-                    }
-                  }
-
-                  if (intermediateActions.length > 0) {
-                    voiceText = `Start from ${startClean}, ${intermediateActions.join(', ')}, and arrive at ${endClean}. Total distance is ${totalDist} meters, estimated at approximately ${estMins} minute${estMins > 1 ? 's' : ''}.`;
+                  if (conciseSteps.length > 0) {
+                    voiceText = `Start from ${startClean}. ` + conciseSteps.join(' Then, ') + ` Walk down the corridor to ${endClean}. You have arrived at your destination.`;
                   } else {
-                    voiceText = `Start from ${startClean} and proceed along the main accessible pathway directly to ${endClean}. Total distance is ${totalDist} meters, estimated at approximately ${estMins} minute${estMins > 1 ? 's' : ''}.`;
+                    voiceText = `Head from ${startClean} along the main hallway directly to ${endClean}. Total distance: ${activeFastApiRoute.total_distance_meters} meters.`;
                   }
                 }
 
@@ -536,7 +519,6 @@ export const AccessibleNavigation: React.FC<AccessibleNavigationProps> = ({
                   ))}
                 </div>
               </div>
-
 
 
               {/* Turn-by-turn Step-by-Step Instructions Breakdown */}

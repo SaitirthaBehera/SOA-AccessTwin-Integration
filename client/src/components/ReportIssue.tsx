@@ -96,19 +96,40 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
 
   const selectedFloorData = availableFloors.find(f => String(f.floorId) === String(floorId)) || availableFloors[0];
 
+  // Helper to find inside room or nearest mapped room
+  const findRoomOrNearest = (x: number, y: number, roomsList?: BuildingRoom[]): BuildingRoom | null => {
+    if (!roomsList || roomsList.length === 0) return null;
+    const inside = roomsList.find(
+      r => x >= r.x && x <= (r.x + r.width) && y >= r.y && y <= (r.y + r.height)
+    );
+    if (inside) return inside;
+
+    let nearest: BuildingRoom | null = null;
+    let minDistance = Infinity;
+    for (const r of roomsList) {
+      const rx = Number.isFinite(r.x) ? r.x : 0;
+      const ry = Number.isFinite(r.y) ? r.y : 0;
+      const rw = Number.isFinite(r.width) ? r.width : 100;
+      const rh = Number.isFinite(r.height) ? r.height : 60;
+      const closestX = Math.max(rx, Math.min(x, rx + rw));
+      const closestY = Math.max(ry, Math.min(y, ry + rh));
+      const dist = Math.hypot(x - closestX, y - closestY);
+      if (dist < minDistance) {
+        minDistance = dist;
+        nearest = r;
+      }
+    }
+    return nearest;
+  };
+
   // Try to find initial room if prefilledLocation exists
   const initialRoom = prefilledLocation && selectedFloorData
-    ? selectedFloorData.rooms.find(
-        r => prefilledLocation.x >= r.x && 
-             prefilledLocation.x <= (r.x + r.width) && 
-             prefilledLocation.y >= r.y && 
-             prefilledLocation.y <= (r.y + r.height)
-      ) || null
+    ? findRoomOrNearest(prefilledLocation.x, prefilledLocation.y, selectedFloorData.rooms)
     : null;
 
   const [selectedRoom, setSelectedRoom] = useState<BuildingRoom | null>(initialRoom);
   const [featureName, setFeatureName] = useState(initialRoom?.name || '');
-  const [featureType, setFeatureType] = useState<string>('ramp');
+  const [featureType, setFeatureType] = useState<string>('');
   const [availableFeatureOptions, setAvailableFeatureOptions] = useState<{ label: string; value: string }[]>([]);
   const [status, setStatus] = useState<FeatureStatus>('broken');
   const [description, setDescription] = useState('');
@@ -166,29 +187,17 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
 
   // 3. Location & Room Select Handler
   const handleSelectLocation = (loc: { x: number; y: number }, room: BuildingRoom | null) => {
-    if (room) {
-      // Valid mapped room selected
-      setPinLocation(loc);
-      setSelectedRoom(room);
-      setFeatureName(room.name);
-      setLocationError(null);
+    const resolvedRoom = room || findRoomOrNearest(loc.x, loc.y, selectedFloorData?.rooms);
 
-      // Auto-suggest feature type based on room category
-      if (room.category === 'toilet') {
-        setFeatureType('toilet');
-      } else if (room.category === 'elevator_bay') {
-        setFeatureType('lift');
-      } else if (room.category === 'entrance') {
-        setFeatureType('ramp');
-      } else if (['lab', 'classroom', 'office', 'library', 'auditorium'].includes(room.category)) {
-        setFeatureType('door');
-      }
+    setPinLocation(loc);
+    setLocationError(null);
+
+    if (resolvedRoom) {
+      setSelectedRoom(resolvedRoom);
+      setFeatureName(resolvedRoom.name);
     } else {
-      // Unmapped area clicked -> clear location and require picking a room
-      setPinLocation(null);
       setSelectedRoom(null);
-      setFeatureName('');
-      setLocationError('Please select a marked location on the floor map.');
+      setFeatureName(`Location (${loc.x}, ${loc.y})`);
     }
   };
 
@@ -202,13 +211,6 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
     api.getAvailableFeatureColumns(String(floorId)).then((features) => {
       const options = features.map(colName => ({ label: colName, value: colName }));
       setAvailableFeatureOptions(options);
-      
-      // Reset feature type if not in new options
-      if (options.length > 0 && !options.find(o => o.value === featureType)) {
-        setFeatureType(options[0].value);
-      } else if (options.length === 0) {
-        setFeatureType('other');
-      }
     });
   }, [buildingId, floorId]);
 
@@ -227,12 +229,21 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!selectedRoom || !pinLocation) {
-      setLocationError('Please select a marked location on the floor map.');
+    if (!pinLocation) {
+      setLocationError('Please select a location on the floor map.');
+      return;
+    }
+
+    if (!featureType) {
+      setLocationError('Please select a feature type.');
       return;
     }
 
     if (!description.trim()) return;
+
+    const resolvedRoom = selectedRoom || findRoomOrNearest(pinLocation.x, pinLocation.y, selectedFloorData?.rooms);
+    const finalFeatureName = featureName || resolvedRoom?.name || 'Reported Location';
+    const finalFeatureId = resolvedRoom?.id || `loc-${pinLocation.x}-${pinLocation.y}`;
 
     setIsSubmitting(true);
     setSubmitError(null);
@@ -240,13 +251,13 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
       const newReport = await api.submitReport({
         buildingId,
         buildingName: selectedBuildingData?.name || 'Unknown Building',
-        featureName: selectedRoom.name,
-        featureId: selectedRoom.id,
+        featureName: finalFeatureName,
+        featureId: finalFeatureId,
         featureType: featureType as FeatureType,
         status,
         description: description.trim(),
-        floorId,
-        floorName: selectedFloorData?.name || (floorId === 0 ? 'Ground Floor' : `Floor ${floorId}`),
+        floorId: String(floorId),
+        floorName: selectedFloorData?.name || `Floor ${floorId}`,
         location: pinLocation,
         photoUrl: photoPreview || undefined,
         reporterName: reporterName.trim() || 'Anonymous Campus Reporter'
@@ -260,7 +271,7 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
       // Completely reset form fields and selection after successful submission
       setSelectedRoom(null);
       setFeatureName('');
-      setFeatureType('ramp');
+      setFeatureType('');
       setStatus('broken');
       setDescription('');
       setReporterName('');
@@ -469,6 +480,7 @@ export const ReportIssue: React.FC<ReportIssueProps> = ({
                 onChange={(e) => setFeatureType(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
+                <option value="">Select a feature type...</option>
                 {availableFeatureOptions.length > 0 ? (
                   availableFeatureOptions.map(opt => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
