@@ -486,7 +486,11 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <Footer onOpenAdminLogin={() => setActiveTab('admin')} />
+      <Footer 
+        onOpenAdminLogin={() => setActiveTab('admin')} 
+        onNavigateToTwinMap={() => setActiveTab('digital-twin')}
+        onNavigateToTab={(tab) => setActiveTab(tab)} 
+      />
 
       {/* Educational How It Works Modal */}
       <HowItWorksModal

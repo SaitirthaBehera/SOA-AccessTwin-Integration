@@ -1,294 +1,111 @@
 <div align="center">
-
-# ♿ SOA AccessTwin
-
-### AI-Powered Campus Accessibility Audit & Navigation Platform
-
-*Transforming SOA University ITER Campus into an inclusive, barrier-free environment using Computer Vision, Digital Twin Technology, and Intelligent Wayfinding*
-
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://typescriptlang.org)
-[![Supabase](https://img.shields.io/badge/Supabase-Cloud-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com)
-[![Gemini](https://img.shields.io/badge/Gemini_3.7-Vision_AI-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
-
+  <h1>AccessTwin ♿🏛️</h1>
+  <h3><i>"Find your destination. Follow the smartest route."</i></h3>
+  <p><strong>Crowdsourced Accessibility Digital Twin for Public Buildings & Campuses</strong></p>
+  <p><i>Smart India Hackathon / SOA Ideathon 2026 (Problem Statement: SOAIDEATHON-S37)</i></p>
+  
+  [![React](https://img.shields.io/badge/React-18.x-blue?style=flat-square&logo=react)](https://reactjs.org/)
+  [![FastAPI](https://img.shields.io/badge/FastAPI-Python_3.11-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com/)
+  [![Supabase](https://img.shields.io/badge/Supabase-Database-3ECF8E?style=flat-square&logo=supabase)](https://supabase.com/)
 </div>
 
 ---
 
-## 🎯 Problem Statement
+## 📌 Links & Resources
+* **🎥 Live Demo Video:** [Click here to watch](#) *(Insert YouTube/Drive Link)*
+* **📑 Pitch Deck / Presentation:** [View PPT Here](#) *(Insert Canva/PDF Link)*
 
-> **1.3 billion people worldwide live with some form of disability** (WHO, 2024). Most university campuses in India lack proper accessibility infrastructure, and even when facilities exist, there's no systematic way to audit, monitor, or navigate them.
+---
 
-SOA AccessTwin solves this by combining **AI-powered barrier detection**, a **campus-wide digital twin**, and **accessible turn-by-turn navigation** — all in one platform.
+## 🚨 The Problem & Our Solution
+In India, millions of citizens with physical or visual impairments struggle to navigate public buildings, educational campuses, and hospitals due to unmapped barriers like broken elevators, steep ramps, or blocked pathways. 
+
+**AccessTwin** solves this by creating a real-time, interactive digital twin of any campus. We empower the community to crowdsource physical barriers, verify them using AI, and calculate customized obstacle-free paths. 
 
 ---
 
 ## ✨ Key Features
 
-### 🔍 1. AI Barrier Detection (Gemini 3.7 Vision + YOLOv8)
-- Upload any campus photo → AI automatically detects accessibility barriers
-- Identifies: blocked ramps, missing handrails, broken lifts, inaccessible restrooms, narrow doorways
-- Returns **confidence scores**, **barrier classification**, and **CPWD-compliant fix recommendations** with cost estimates
-
-### 🗺️ 2. Campus Digital Twin (387 Nodes, 430 Edges)
-- Complete spatial graph of **Block C, Block D, Block E** and outdoor campus grounds
-- Multi-floor mapping with **real elevator shafts, stairwells, sky-bridges, and corridor junctions**
-- Interactive floor plan viewer with accessibility overlays
-
-### ♿ 3. Wheelchair-Accessible Navigation with Voice Guidance
-- **Dijkstra shortest-path routing** with accessibility profile support (Wheelchair / Visual / Hearing / Motor)
-- Wheelchair mode **automatically avoids stairs** and routes through elevators + bridges
-- **Natural voice guidance** via Web Speech API:
-  > *"Start from E-509. Take Lift 1 down to Ground Floor. Cross the bridge to Block D. Walk to C-112. You have arrived."*
-- 3-Tier cascading location selector: **Block → Floor → Room**
-
-### 📊 4. Smart Recommendations Engine
-- Domain-aware civil engineering recommendations following **CPWD 2021 Guidelines**
-- Blocked ramp → *"Clear obstruction, paint yellow hatched zone"* (not "install new ramp")
-- Missing ramp → *"Install 1:12 gradient modular aluminum ramp with handrails"*
-- Each fix includes **estimated cost range in ₹ (INR)**
-
-### 🏗️ 5. AI Blueprint Ingestion (Admin Panel)
-- Upload architectural CAD drawings or floor plan photos
-- **Gemini 3.7 Vision** extracts rooms, corridors, lifts, and coordinates automatically
-- Extracted data syncs to both **local graph** and **Supabase cloud database**
-
-### 📋 6. Community-Powered Issue Reporting
-- Any student/staff can report accessibility barriers with photo evidence
-- Admin verification workflow with accept/reject + notes
-- Real-time barrier tracking dashboard with building-wise accessibility scores
+* 🗺️ **Interactive Spatial Digital Twin (Dijkstra's Algorithm):** Interactive SVG-based floor maps that map nodes across the campus. The system uses Dijkstra's algorithm to calculate the shortest, safest, and 100% obstacle-free route specifically tailored for wheelchair users.
+* 🗣️ **Voice-Guided Wayfinding & Detection:** Full integration with the Web Speech API (`window.speechSynthesis`). The system provides human-like turn-by-turn auditory instructions for navigation and announces AI-detected obstacles for visually impaired users.
+* 📸 **TwinGram (Gamified Social Feed):** A community-driven feed where students and visitors upload photos of physical barriers. The community confirms these issues, building a trustable "Confidence Score".
+* 🤖 **AI Vision Intelligence (Gemini AI):** Uses Google Gemini's advanced multimodal capabilities for deep contextual analysis, detecting architectural features (like ramps and stairs), and generating automated, cost-effective repair recommendations.
+* 📈 **Campus Accessibility Benchmark Index:** Automatically calculates an overall accessibility score for each building based on structural features, crowdsourced verified reports, and automated sensor audits.
+* 🛠️ **Admin Dashboard & SVG Ingestion:** Administrators can view reports, plan fixes, and upload new SVG floor maps directly into the digital twin ecosystem.
 
 ---
 
-## 🏗️ Architecture
+## 📸 Application Screenshots
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    React + Vite Frontend                 │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐ │
-│  │Navigation│ │AI Detect │ │  Admin   │ │  Reports   │ │
-│  │  + Voice │ │  Upload  │ │Dashboard │ │  & Scores  │ │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └─────┬──────┘ │
-│       │             │            │              │        │
-│       └─────────────┴────────────┴──────────────┘        │
-│                         │ REST API                       │
-├─────────────────────────┼───────────────────────────────-┤
-│              Node.js Express Proxy (Port 3000)           │
-│                         │                                │
-├─────────────────────────┼────────────────────────────────┤
-│              Python FastAPI Backend (Port 8000)           │
-│  ┌──────────────┐ ┌─────────────┐ ┌───────────────────┐ │
-│  │ Gemini 3.7   │ │  Dijkstra   │ │  CPWD Civil Fix   │ │
-│  │ Vision Model │ │  Router     │ │  Engine           │ │
-│  └──────┬───────┘ └──────┬──────┘ └────────┬──────────┘ │
-│         │                │                  │            │
-│         └────────────────┴──────────────────┘            │
-│                         │                                │
-├─────────────────────────┼────────────────────────────────┤
-│                    Data Layer                             │
-│  ┌──────────────────┐  ┌────────────────────────┐        │
-│  │ unified_graph.json│  │  Supabase (PostgreSQL) │        │
-│  │ 387 nodes/430 edg│  │  campus_nodes/edges    │        │
-│  └──────────────────┘  └────────────────────────┘        │
-└──────────────────────────────────────────────────────────┘
-```
+*(Replace these placeholders with your actual screenshots before submission!)*
+
+| Interactive Digital Twin Map | Turn-by-Turn Voice Navigation |
+| :---: | :---: |
+| <img src="https://via.placeholder.com/400x250.png?text=Interactive+SVG+Map+Screenshot" alt="Dashboard" /> | <img src="https://via.placeholder.com/400x250.png?text=Voice+Navigation+Screenshot" alt="Map" /> |
+
+| TwinGram Social Feed | AI Barrier Detection |
+| :---: | :---: |
+| <img src="https://via.placeholder.com/400x250.png?text=TwinGram+Feed+Screenshot" alt="TwinGram" /> | <img src="https://via.placeholder.com/400x250.png?text=Gemini+AI+Detection" alt="AI Detect" /> |
 
 ---
 
-## 🚀 Quick Start
+## 🛠️ Tech Stack & Architecture
 
-### Prerequisites
-- **Python 3.10+**
-- **Node.js 18+**
-- **Gemini API Key** ([Get one free](https://aistudio.google.com/apikey))
+**Frontend (Client)**
+*   React 18, Vite, Tailwind CSS v4, Lucide React, Framer Motion
+*   Interactive SVG Mapping & Web Speech API
 
-### 1. Clone the Repository
+**Backend (Server)**
+*   Python 3.11.9, FastAPI, Uvicorn
+*   NetworkX (Graph computation for Dijkstra routing)
+*   Google GenAI SDK
+
+**Database & Auth**
+*   Supabase PostgreSQL (Structured relational data)
+*   Supabase Storage (Secure image hosting)
+*   Row Level Security (RLS) policies
+
+---
+
+## 🚀 How to Run Locally (Single Terminal)
+
+This project uses `concurrently` to run both the React frontend and the FastAPI backend side-by-side perfectly.
+
+### 1. Clone the repository
 ```bash
-git clone https://github.com/SaitirthaBehera/SOA-AccessTwin-Integration.git
-cd SOA-AccessTwin-Integration
+git clone https://github.com/sujitnayak-web/BajrangBytes.git
+cd BajrangBytes
 ```
 
-### 2. Setup Backend (Python FastAPI)
+### 2. Install Dependencies
 ```bash
-cd server
-pip install -r requirements.txt
-```
-
-Create a `.env` file:
-```env
-GEMINI_API_KEY=your_gemini_api_key_here
-MOCK_MODE=false
-CONFIDENCE_THRESHOLD=0.35
-```
-
-Start the backend:
-```bash
-uvicorn main:app --reload --port 8000
-```
-
-### 3. Setup Frontend (React + Vite)
-```bash
-cd client
 npm install
+cd navigation-backend
+pip install -r requirements.txt
+cd ..
+```
+
+### 3. Setup AI Environment (Windows PowerShell)
+Before running the app, set your Gemini API key in the terminal:
+```powershell
+$env:GEMINI_API_KEY="YOUR_GEMINI_API_KEY_HERE"
+```
+
+### 4. Start the Application
+Run both the frontend and backend with one simple command from the root directory:
+```bash
 npm run dev
 ```
 
-### 4. Open in Browser
-```
-http://localhost:3000
-```
+*   🌐 **Frontend:** `http://localhost:3000`
+*   ⚙️ **Backend API:** `http://localhost:8000`
 
 ---
 
-## 📁 Project Structure
-
-```
-SOA-AccessTwin-Integration/
-│
-├── server/                       # ⚙️ Python FastAPI Backend
-│   ├── main.py                   #    FastAPI app entry point
-│   ├── config.py                 #    Environment configuration
-│   ├── requirements.txt          #    Python dependencies
-│   ├── routes/
-│   │   ├── detect.py             #    /api/detect - AI barrier detection
-│   │   └── navigate.py           #    /api/navigate - Accessible routing
-│   ├── services/
-│   │   ├── vision_model.py       #    Gemini 3.7 Vision + YOLOv8 inference
-│   │   ├── accessibility_router.py   # Dijkstra multi-profile routing engine
-│   │   ├── blueprint_parser.py   #    AI floor plan extraction (Gemini Vision)
-│   │   └── supabase_sync.py      #    Cloud database sync service
-│   ├── data/
-│   │   └── unified_graph.json    #    Campus graph (387 nodes, 430 edges)
-│   ├── static/maps/
-│   │   ├── campus/               #    Campus satellite map
-│   │   └── floors/               #    Architectural floor plans (Blocks A-F)
-│   └── scripts/
-│       └── push_to_supabase.py   #    One-click Supabase data sync
-│
-├── client/                       # 🎨 React + TypeScript Frontend
-│   ├── server.ts                 #    Express proxy server + API middleware
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── AccessibleNavigation.tsx   # Wheelchair nav + voice guidance
-│   │   │   ├── AiDetection.tsx            # AI barrier detection UI
-│   │   │   ├── AdminDashboard.tsx         # Admin panel + report management
-│   │   │   ├── FloorMapIngestion.tsx      # AI blueprint upload (Gemini)
-│   │   │   ├── LocationCascadeSelector.tsx # 3-tier Block→Floor→Room picker
-│   │   │   ├── ReportIssue.tsx            # Community issue reporting
-│   │   │   ├── SmartRecommendations.tsx   # CPWD civil fix recommendations
-│   │   │   ├── DigitalTwinMap.tsx         # Interactive campus map
-│   │   │   └── HomeDashboard.tsx          # Landing page + accessibility scores
-│   │   ├── services/
-│   │   │   ├── api.ts             #    Supabase CRUD operations
-│   │   │   └── navigationApi.ts   #    Navigation API client
-│   │   ├── utils/
-│   │   │   └── campusGraph.ts     #    Graph loader for frontend
-│   │   └── data/
-│   │       └── unified_graph.json #    Campus graph (frontend copy)
-│   └── package.json
-│
-└── .gitattributes                # Binary file handling for Git
-```
+## 🔮 Future Scope
+* **IoT Sensor Integration:** Real-time data from automatic doors and elevators to update the digital twin instantly.
+* **AR Navigation:** Augmented Reality directions overlaid on the smartphone camera for visually impaired users.
 
 ---
 
-## 🛠️ Tech Stack
-
-| Layer | Technology | Purpose |
-| :--- | :--- | :--- |
-| **Frontend** | React 18, TypeScript, Vite | Responsive SPA with interactive maps |
-| **Backend** | Python FastAPI, Uvicorn | REST API, AI inference, routing engine |
-| **AI / ML** | Google Gemini 3.7 Vision, YOLOv8 | Barrier detection, blueprint parsing |
-| **Database** | Supabase (PostgreSQL) | Cloud storage for reports, nodes, edges |
-| **Routing** | Dijkstra Algorithm, NetworkX | Multi-profile accessible pathfinding |
-| **Voice** | Web Speech API | Turn-by-turn voice navigation |
-| **Proxy** | Express.js | Frontend-backend bridge with failover |
-| **Maps** | Custom SVG + Floor Plans | Interactive campus & floor visualization |
-
----
-
-## 📊 Database Schema (Supabase)
-
-### `campus_nodes` — Campus Points of Interest
-| Column | Type | Description |
-| :--- | :--- | :--- |
-| `id` | `TEXT PK` | Unique node ID (e.g., `e_f5_r09`) |
-| `label` | `TEXT` | Display name (e.g., `E-509 Block E Floor 5`) |
-| `building_id` | `TEXT` | Block identifier (`block_e`, `block_c`, `block_d`) |
-| `floor` | `INT` | Floor number (0 = Ground) |
-| `type` | `TEXT` | `room`, `lift`, `stairs`, `bridge`, `entrance`, `washroom` |
-| `accessible` | `BOOLEAN` | Wheelchair accessible flag |
-| `coord_x`, `coord_y` | `FLOAT` | 2D map coordinates (0–100%) |
-
-### `campus_edges` — Navigation Connections
-| Column | Type | Description |
-| :--- | :--- | :--- |
-| `from_node_id` | `TEXT FK` | Source node |
-| `to_node_id` | `TEXT FK` | Destination node |
-| `distance` | `INT` | Distance in meters |
-| `type` | `TEXT` | `corridor`, `elevator`, `stairs`, `bridge`, `pathway` |
-| `accessible` | `BOOLEAN` | Wheelchair passable flag |
-
----
-
-## 🧪 API Endpoints
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `POST` | `/api/detect` | Upload image → AI barrier detection |
-| `GET` | `/api/navigate` | Accessible route between two campus points |
-| `POST` | `/api/recommendations/analyze` | Generate CPWD-compliant fix recommendations |
-| `GET` | `/api/health` | Backend health check |
-| `POST` | `/api/admin/ingest-blueprint` | AI blueprint extraction + Supabase sync |
-
-**Example Navigation Request:**
-```
-GET /api/navigate?start=iter_cafeteria&end=c_f1_r13&profile=wheelchair
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "path_nodes": ["iter_cafeteria", "e_entrance", "e_f0_lift1", "e_f1_lift1", "e_d_bridge_f1", "d_c_bridge_f1", "c_f1_r13"],
-  "total_distance": 226,
-  "stairs_count": 0,
-  "voice_guidance": "Start from ITER Cafeteria. Enter Block E. Take Lift 1 up to Floor 1. Cross the bridge to Block D. Cross the bridge to Block C. Walk down the corridor to Room C-113. You have arrived."
-}
-```
-
----
-
-## 👥 Team
-
-| Name | Role |
-| :--- | :--- |
-| **Saitirtha Behera** | AI/ML Integration, Backend Architecture, Navigation Engine |
-| **Sujit Kumar Nayak** | Frontend Development, Supabase, UI/UX |
-
----
-
-## 📜 Standards & References
-
-- **CPWD Guidelines 2021** — Harmonised Guidelines for Universal Accessibility in India
-- **RPWD Act 2016** — Rights of Persons with Disabilities Act, India
-- **WCAG 2.1** — Web Content Accessibility Guidelines
-- **IS 11592:2023** — BIS Barrier-Free Built Environment Standards
-
----
-
-## 📄 License
-
-This project was built for the **SOA University Hackathon 2026**. Open for educational and accessibility advocacy purposes.
-
----
-
-<div align="center">
-
-**Built with ❤️ for an Inclusive Campus**
-
-*Making SOA ITER barrier-free, one node at a time* ♿🏫
-
-</div>
+<p align="center"><i>Made with ❤️ by Bajrang Bytes for an accessible and inclusive future.</i></p>
